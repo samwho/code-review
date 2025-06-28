@@ -334,45 +334,22 @@ class DiffViewer {
   }
 
   shouldHighlightSymbol(symbolName, element) {
-    // Standard library and built-in symbols to exclude
-    const standardLibrarySymbols = new Set([
-      // JavaScript built-ins
-      'Promise', 'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'RegExp', 'Error',
-      'Math', 'JSON', 'console', 'window', 'document', 'localStorage', 'sessionStorage',
-      'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'fetch', 'Response',
-      'Request', 'Headers', 'FormData', 'URLSearchParams', 'URL', 'Blob', 'File',
-      
-      // Node.js built-ins
-      'process', 'Buffer', 'global', '__dirname', '__filename', 'require', 'module', 'exports',
-      
-      // TypeScript built-ins
-      'Record', 'Partial', 'Required', 'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable',
-      'ReturnType', 'InstanceType', 'ThisType', 'Parameters', 'ConstructorParameters',
-      
-      // Common framework globals (React, Vue, etc.)
-      'React', 'Vue', 'Angular', 'Component', 'useState', 'useEffect', 'useContext',
-      
-      // Common testing globals
-      'describe', 'it', 'test', 'expect', 'jest', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll',
-      
-      // Common single letter variables and short names
-      'i', 'j', 'k', 'x', 'y', 'z', 'a', 'b', 'c', 'e', 'el', 'id', 'key', 'val', 'len',
-      
-      // Common keywords that might be highlighted as identifiers
-      'true', 'false', 'null', 'undefined', 'this', 'super', 'new', 'typeof', 'instanceof'
-    ]);
-    
-    // Skip standard library symbols
-    if (standardLibrarySymbols.has(symbolName)) {
-      return false;
-    }
-    
-    // Skip very short symbols (likely variables)
+    // Skip very short symbols
     if (symbolName.length < 3) {
       return false;
     }
     
-    // Use semantic analysis if available for accurate symbol classification
+    // Only highlight symbols that are actually defined in the codebase
+    if (!this.isSymbolDefinedInCodebase(symbolName)) {
+      return false;
+    }
+    
+    // Also make sure this is a proper symbolic reference, not inside a string literal
+    if (this.isInsideStringLiteral(element)) {
+      return false;
+    }
+    
+    // Use semantic analysis for accurate symbol classification
     const isFunction = this.isSymbolFunction(symbolName, element);
     
     // If it's a function, always show it
@@ -385,8 +362,57 @@ class DiffViewer {
       return false;
     }
     
-    // If we're showing variables and it's not a standard library symbol, show it
+    // If we're showing variables and it's defined in our codebase, show it
     return true;
+  }
+
+  isSymbolDefinedInCodebase(symbolName) {
+    if (!this.dependencyGraph || !this.dependencyGraph.nodes) {
+      return false;
+    }
+
+    // Check if symbol is defined in any file in our codebase
+    for (const node of this.dependencyGraph.nodes) {
+      // Check semantic symbols (most reliable)
+      if (node.semanticSymbols) {
+        const semanticSymbol = node.semanticSymbols.find(sym => sym.name === symbolName);
+        if (semanticSymbol) {
+          return true;
+        }
+      }
+      
+      // Check exports
+      if (node.exports && node.exports.find(exp => exp.name === symbolName)) {
+        return true;
+      }
+      
+      // Check functions
+      if (node.functions && node.functions.find(func => func.name === symbolName)) {
+        return true;
+      }
+      
+      // Check regular symbols (variables, etc.)
+      if (node.symbols && node.symbols.find(sym => sym.name === symbolName)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  isInsideStringLiteral(element) {
+    // Check if the element is inside a string literal by looking at syntax highlighting classes
+    let current = element;
+    while (current && current !== document) {
+      if (current.classList && (
+          current.classList.contains('syntax-string') || 
+          current.classList.contains('syntax-template-literal')
+        )) {
+        return true;
+      }
+      current = current.parentElement;
+    }
+    return false;
   }
   
   isSymbolFunction(symbolName, element) {
