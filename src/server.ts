@@ -40,6 +40,7 @@ async function handleAPI(url: URL, request: Request): Promise<Response> {
     if (url.pathname === '/api/diff') {
       const baseBranch = url.searchParams.get('base');
       const compareBranch = url.searchParams.get('compare');
+      const order = url.searchParams.get('order') as 'top-down' | 'bottom-up' | 'alphabetical' || 'alphabetical';
       
       if (!baseBranch || !compareBranch) {
         return new Response(
@@ -48,8 +49,32 @@ async function handleAPI(url: URL, request: Request): Promise<Response> {
         );
       }
       
-      const diff = await git.getDiff(baseBranch, compareBranch);
-      return new Response(JSON.stringify(diff), { headers });
+      const result = await git.getOrderedFiles(baseBranch, compareBranch, order);
+      return new Response(JSON.stringify(result), { headers });
+    }
+    
+    if (url.pathname === '/api/dependencies') {
+      const branch = url.searchParams.get('branch');
+      
+      if (!branch) {
+        return new Response(
+          JSON.stringify({ error: 'Branch parameter is required' }),
+          { status: 400, headers }
+        );
+      }
+      
+      const graph = await git.analyzeDependencies(branch);
+      
+      // Convert to serializable format
+      const serializable = {
+        nodes: Array.from(graph.nodes.entries()).map(([filename, analysis]) => ({
+          filename,
+          ...analysis
+        })),
+        edges: graph.edges
+      };
+      
+      return new Response(JSON.stringify(serializable), { headers });
     }
     
     return new Response(

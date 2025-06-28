@@ -1,10 +1,12 @@
 import { spawn } from 'bun';
+import { DependencyAnalyzer, type DependencyGraph } from './dependency-analyzer';
 
 export interface DiffLine {
   type: 'added' | 'removed' | 'context';
   content: string;
   lineNumber?: number;
   oldLineNumber?: number;
+  isHunkHeader?: boolean;
 }
 
 export interface FileDiff {
@@ -16,6 +18,8 @@ export interface FileDiff {
 }
 
 export class GitService {
+  private analyzer = new DependencyAnalyzer();
+  
   constructor(private repoPath: string = './test-repo') {}
 
   async getDiff(baseBranch: string, compareBranch: string): Promise<FileDiff[]> {
@@ -66,10 +70,21 @@ export class GitService {
           currentFile.isDeleted = true;
         }
       } else if (line.startsWith('@@')) {
-        const match = line.match(/@@ -(\d+),?\d* \+(\d+),?\d* @@/);
+        const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@(.*)/);
         if (match) {
           oldLineNumber = parseInt(match[1]);
-          newLineNumber = parseInt(match[2]);
+          newLineNumber = parseInt(match[3]);
+          
+          // Add hunk header as a special line type
+          if (currentFile) {
+            currentFile.lines.push({
+              type: 'context',
+              content: line,
+              lineNumber: undefined,
+              oldLineNumber: undefined,
+              isHunkHeader: true
+            });
+          }
         }
       } else if (line.startsWith('+') && !line.startsWith('+++')) {
         if (currentFile) {
@@ -125,5 +140,95 @@ export class GitService {
     }
 
     return output.trim().split('\n').filter(branch => branch.trim());
+  }
+
+  async getFileContents(branch: string, filePath: string): Promise<string> {
+    const proc = spawn(['git', 'show', `${branch}:${filePath}`], {
+      cwd: this.repoPath,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+    
+    if (exitCode !== 0) {
+      throw new Error(`Failed to get file contents for ${filePath} in ${branch}`);
+    }
+
+    return output;
+  }
+
+  async getFilesInBranch(branch: string): Promise<string[]> {
+    const proc = spawn(['git', 'ls-tree', '-r', '--name-only', branch], {
+      cwd: this.repoPath,
+      stdout: 'pipe',
+      stderr: 'pipe'
+    });
+
+    const output = await new Response(proc.stdout).text();
+    const exitCode = await proc.exited;
+    
+    if (exitCode !== 0) {
+      throw new Error(`Failed to list files in branch ${branch}`);
+    }
+
+    return output.trim().split('\n').filter(file => 
+      file.trim() && (file.endsWith('.ts') || file.endsWith('.js') || file.endsWith('.tsx') || file.endsWith('.jsx'))
+    );
+  }
+
+  async analyzeDependencies(branch: string): Promise<DependencyGraph> {
+    const files = await this.getFilesInBranch(branch);
+    const fileContents = new Map<string, string>();
+
+    // Get contents for all TypeScript/JavaScript files
+    for (const file of files) {
+      try {
+        const content = await this.getFileContents(branch, file);
+        fileContents.set(file, content);
+      } catch (error) {
+        console.warn(`Could not read file ${file}:`, error);
+      }
+    }
+
+    return this.analyzer.buildDependencyGraph(fileContents);
+  }
+
+  async getOrderedFiles(baseBranch: string, compareBranch: string, orderType: 'top-down' | 'bottom-up' | 'alphabetical' = 'alphabetical'): Promise<{files: FileDiff[], graph?: any}> {
+    const diff = await this.getDiff(baseBranch, compareBranch);
+    
+    if (orderType === 'alphabetical') {
+      return { files: diff.sort((a, b) => a.filename.localeCompare(b.filename)) };
+    }
+
+    // For dependency-based ordering, analyze the compare branch
+    try {
+      const graph = await this.analyzeDependencies(compareBranch);
+      const orderedFilenames = this.analyzer.topologicalSort(graph, orderType === 'top-down');
+      
+      // Sort diff files based on dependency order
+      const fileOrder = new Map(orderedFilenames.map((file, index) => [file, index]));
+      
+      const sortedFiles = diff.sort((a, b) => {
+        const orderA = fileOrder.get(a.filename) ?? 999999;
+        const orderB = fileOrder.get(b.filename) ?? 999999;
+        return orderA - orderB;
+      });
+
+      // Convert graph to serializable format for client
+      const serializedGraph = {
+        nodes: Array.from(graph.nodes.entries()).map(([filename, analysis]) => ({
+          filename,
+          ...analysis
+        })),
+        edges: graph.edges
+      };
+      
+      return { files: sortedFiles, graph: serializedGraph };
+    } catch (error) {
+      console.warn('Failed to analyze dependencies, falling back to alphabetical order:', error);
+      return { files: diff.sort((a, b) => a.filename.localeCompare(b.filename)) };
+    }
   }
 }

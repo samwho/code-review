@@ -199,14 +199,23 @@ body {
 }
 
 .line-numbers {
-  width: 60px;
-  padding: 4px 8px;
+  width: 40px;
+  padding: 4px 6px;
   text-align: right;
   color: var(--text-secondary);
   background-color: var(--bg-tertiary);
   border-right: 1px solid var(--border-color);
   user-select: none;
   vertical-align: top;
+  font-size: 11px;
+}
+
+.old-line-number {
+  border-right: none;
+}
+
+.new-line-number {
+  border-right: 1px solid var(--border-color);
 }
 
 .line-content {
@@ -236,16 +245,34 @@ body {
   background-color: var(--bg-primary);
 }
 
-.line-added .line-numbers::before {
+.line-added .new-line-number::before {
   content: '+';
   color: var(--accent-green);
   font-weight: bold;
+  margin-right: 2px;
 }
 
-.line-removed .line-numbers::before {
+.line-removed .old-line-number::before {
   content: '-';
   color: var(--accent-red);
   font-weight: bold;
+  margin-right: 2px;
+}
+
+/* Hunk header styles */
+.hunk-header {
+  background-color: var(--bg-secondary);
+}
+
+.hunk-header-content {
+  padding: 8px 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 11px;
 }
 
 .empty-state {
@@ -261,6 +288,32 @@ body {
   padding: 16px;
   border-radius: 6px;
   margin-bottom: 16px;
+}
+
+/* File ordering styles */
+.order-info {
+  margin-bottom: 24px;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.order-badge {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.order-badge strong {
+  color: var(--accent-green);
+}
+
+.order-description {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  font-style: italic;
 }
 
 /* Syntax highlighting styles */
@@ -292,6 +345,112 @@ body {
 
 .syntax-identifier {
   color: var(--syntax-identifier);
+}
+
+/* Symbol tooltip styles */
+.symbol-interactive {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--accent-green);
+  text-underline-offset: 2px;
+}
+
+.symbol-interactive:hover {
+  background-color: var(--bg-addition);
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+.symbol-tooltip {
+  display: none;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  max-width: 400px;
+  font-size: 12px;
+  z-index: 1000;
+}
+
+.tooltip-header {
+  background-color: var(--bg-secondary);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 6px 6px 0 0;
+  font-weight: 600;
+}
+
+.tooltip-body {
+  padding: 8px 12px;
+}
+
+.relation-section {
+  margin-bottom: 8px;
+}
+
+.relation-section:last-child {
+  margin-bottom: 0;
+}
+
+.relation-title {
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.relation-item {
+  padding: 4px 8px;
+  margin: 2px 0;
+  border-radius: 4px;
+  background-color: var(--bg-secondary);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.relation-item:hover {
+  background-color: var(--bg-tertiary);
+}
+
+.file-link {
+  color: var(--accent-green);
+  font-weight: 500;
+}
+
+.symbol-kind {
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-left: 4px;
+}
+
+/* Navigation highlight animations */
+.file-highlighted {
+  animation: fileFlash 2s ease-in-out;
+}
+
+.line-highlighted {
+  animation: lineFlash 3s ease-in-out;
+}
+
+@keyframes fileFlash {
+  0%, 100% { 
+    border-color: var(--border-color);
+    box-shadow: none;
+  }
+  50% { 
+    border-color: var(--accent-green);
+    box-shadow: 0 0 10px var(--accent-green);
+  }
+}
+
+@keyframes lineFlash {
+  0%, 100% { 
+    background-color: transparent;
+  }
+  50% { 
+    background-color: var(--bg-addition);
+  }
 }
 
 /* Mobile responsive styles */
@@ -352,8 +511,8 @@ body {
   }
   
   .line-numbers {
-    width: 45px;
-    padding: 2px 6px;
+    width: 35px;
+    padding: 2px 4px;
     font-size: 10px;
   }
   
