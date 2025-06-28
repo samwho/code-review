@@ -75,6 +75,11 @@ export class SemanticAnalyzer {
       // Visit all identifier nodes in the file
       sourceFile.forEachDescendant((node: Node) => {
         if (node.getKind() === SyntaxKind.Identifier) {
+          // Skip identifiers in comments and string literals
+          if (this.isInCommentOrString(node)) {
+            return;
+          }
+          
           const symbol = this.analyzeIdentifier(node, filename);
           if (symbol) {
             symbols.push(symbol);
@@ -99,6 +104,49 @@ export class SemanticAnalyzer {
     } catch (error) {
       errors.push(`Analysis error: ${error}`);
       return { filename, symbols: [], errors };
+    }
+  }
+
+  /**
+   * Checks if a node is inside a comment or string literal
+   */
+  private isInCommentOrString(node: Node): boolean {
+    try {
+      // Check if we're inside a string literal
+      let current = node.getParent();
+      while (current) {
+        const kind = current.getKind();
+        if (kind === SyntaxKind.StringLiteral || 
+            kind === SyntaxKind.TemplateExpression ||
+            kind === SyntaxKind.NoSubstitutionTemplateLiteral) {
+          return true;
+        }
+        current = current.getParent();
+      }
+      
+      // Check if we're inside a comment by looking at the source text
+      const sourceFile = node.getSourceFile();
+      const pos = node.getStart();
+      const fullText = sourceFile.getFullText();
+      
+      // Find the line containing this position
+      const lineStart = fullText.lastIndexOf('\n', pos) + 1;
+      const lineEnd = fullText.indexOf('\n', pos);
+      const line = fullText.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+      
+      // Check if the position is after a // comment
+      const commentIndex = line.indexOf('//');
+      if (commentIndex !== -1) {
+        const columnInLine = pos - lineStart;
+        if (columnInLine >= commentIndex) {
+          return true;
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      // If we can't determine, assume it's valid to be safe
+      return false;
     }
   }
 

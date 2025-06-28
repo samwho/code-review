@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "bun --watch run src/server.ts",
     "build": "bun build src/server.ts --outdir dist",
-    "start": "bun run dist/server.js"
+    "start": "bun run dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck"
   },
   "devDependencies": {
     "@types/bun": "latest"

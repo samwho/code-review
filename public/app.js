@@ -339,25 +339,14 @@ class DiffViewer {
       return false;
     }
     
-    // Only highlight symbols that are actually defined in the codebase
-    if (!this.isSymbolDefinedInCodebase(symbolName)) {
+    // Use semantic analysis to determine if this symbol is actually defined in our codebase
+    const symbolInfo = this.getSymbolInfo(symbolName);
+    if (!symbolInfo) {
       return false;
     }
-    
-    // Also make sure this is a proper symbolic reference, not inside a string literal
-    if (this.isInsideStringLiteral(element)) {
-      // Debug problematic symbols
-      if (symbolName === 'register' || symbolName === 'log') {
-        console.log(`Skipping '${symbolName}' - inside string literal`);
-      }
-      return false;
-    }
-    
-    // Use semantic analysis for accurate symbol classification
-    const isFunction = this.isSymbolFunction(symbolName, element);
     
     // If it's a function, always show it
-    if (isFunction) {
+    if (symbolInfo.isFunction) {
       return true;
     }
     
@@ -370,95 +359,94 @@ class DiffViewer {
     return true;
   }
 
-  isSymbolDefinedInCodebase(symbolName) {
+  getSymbolInfo(symbolName) {
     if (!this.dependencyGraph || !this.dependencyGraph.nodes) {
-      return false;
+      return null;
     }
 
-    // Check if symbol is defined in any file in our codebase
+    // Filter out common built-in JavaScript/browser symbols
+    const builtInSymbols = new Set([
+      'console', 'log', 'error', 'warn', 'info', 'debug', 'trace',
+      'window', 'document', 'global', 'process', 'Buffer',
+      'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
+      'fetch', 'Response', 'Request', 'URL', 'URLSearchParams',
+      'Object', 'Array', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt',
+      'Function', 'Date', 'RegExp', 'Error', 'TypeError', 'ReferenceError',
+      'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Proxy', 'Reflect',
+      'toString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf',
+      'propertyIsEnumerable', 'toLocaleString', 'constructor',
+      'length', 'prototype', 'name', 'message',
+      'exports', 'module', 'require', '__dirname', '__filename',
+      'JSON', 'Math', 'Infinity', 'NaN', 'undefined', 'null'
+    ]);
+    
+    if (builtInSymbols.has(symbolName)) {
+      return null;
+    }
+
+    // Look for the symbol in our semantic analysis data
     for (const node of this.dependencyGraph.nodes) {
-      // Check semantic symbols (most reliable)
+      // Check semantic symbols first (most reliable)
       if (node.semanticSymbols) {
         const semanticSymbol = node.semanticSymbols.find(sym => sym.name === symbolName);
         if (semanticSymbol) {
-          // Debug: log what we found for problematic symbols
-          if (symbolName === 'log' || symbolName === 'console') {
-            console.log(`Found semantic symbol '${symbolName}' in ${node.filename}:`, semanticSymbol);
-          }
-          return true;
+          return {
+            name: symbolName,
+            isFunction: semanticSymbol.isFunction,
+            file: node.filename,
+            line: semanticSymbol.line,
+            type: 'semantic'
+          };
         }
       }
       
       // Check exports
-      const exportMatch = node.exports && node.exports.find(exp => exp.name === symbolName);
-      if (exportMatch) {
-        if (symbolName === 'log' || symbolName === 'console') {
-          console.log(`Found export '${symbolName}' in ${node.filename}:`, exportMatch);
+      if (node.exports) {
+        const exportMatch = node.exports.find(exp => exp.name === symbolName);
+        if (exportMatch) {
+          return {
+            name: symbolName,
+            isFunction: exportMatch.kind === 'function',
+            file: node.filename,
+            line: exportMatch.line,
+            type: 'export'
+          };
         }
-        return true;
       }
       
       // Check functions
-      const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
-      if (functionMatch) {
-        if (symbolName === 'log' || symbolName === 'console') {
-          console.log(`Found function '${symbolName}' in ${node.filename}:`, functionMatch);
+      if (node.functions) {
+        const functionMatch = node.functions.find(func => func.name === symbolName);
+        if (functionMatch) {
+          return {
+            name: symbolName,
+            isFunction: true,
+            file: node.filename,
+            line: functionMatch.startLine,
+            type: 'function'
+          };
         }
-        return true;
       }
       
-      // Check regular symbols (variables, etc.)
-      const symbolMatch = node.symbols && node.symbols.find(sym => sym.name === symbolName);
-      if (symbolMatch) {
-        if (symbolName === 'log' || symbolName === 'console') {
-          console.log(`Found symbol '${symbolName}' in ${node.filename}:`, symbolMatch);
+      // Check variables/symbols
+      if (node.symbols) {
+        const symbolMatch = node.symbols.find(sym => sym.name === symbolName);
+        if (symbolMatch) {
+          return {
+            name: symbolName,
+            isFunction: false,
+            file: node.filename,
+            line: symbolMatch.line,
+            type: 'variable'
+          };
         }
-        return true;
       }
     }
     
-    return false;
+    return null;
   }
 
-  isInsideStringLiteral(element) {
-    // Check if the element is inside a string literal by looking at syntax highlighting classes
-    let current = element;
-    while (current && current !== document) {
-      if (current.classList && (
-          current.classList.contains('syntax-string') || 
-          current.classList.contains('syntax-template-literal') ||
-          current.classList.contains('syntax-comment')
-        )) {
-        return true;
-      }
-      current = current.parentElement;
-    }
-    return false;
-  }
-  
-  isSymbolFunction(symbolName, element) {
-    // First, check semantic analysis data if available
-    if (this.dependencyGraph && this.dependencyGraph.nodes) {
-      for (const node of this.dependencyGraph.nodes) {
-        // Check semantic symbols first (most accurate)
-        if (node.semanticSymbols) {
-          const semanticSymbol = node.semanticSymbols.find(sym => sym.name === symbolName);
-          if (semanticSymbol) {
-            return semanticSymbol.isFunction;
-          }
-        }
-        
-        // Fallback to function definitions from AST parsing
-        const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
-        if (functionMatch) {
-          return true;
-        }
-      }
-    }
-    
-    // Fallback to context-based detection if semantic data is not available
-    return this.isLikelyFunctionFromContext(symbolName, element);
-  }
+
 
   isLikelyFunctionFromContext(symbolName, element) {
     // Get the actual code content, not the line numbers
