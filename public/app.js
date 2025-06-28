@@ -317,45 +317,40 @@ class DiffViewer {
   }
 
   addSymbolTooltips(contentCell, currentFile) {
-    // For now, let's fall back to the simple approach while we debug semantic analysis
+    // Try semantic analysis first, fall back to simple approach if needed
+    if (this.trySemanticSymbolTooltips(contentCell, currentFile)) {
+      return;
+    }
+    // Fallback to simple method
     this.addSimpleSymbolTooltips(contentCell, currentFile);
-    return;
-    
-    // TODO: Re-enable semantic analysis once debugging is complete
+  }
+  
+  trySemanticSymbolTooltips(contentCell, currentFile) {
     // Get the line number for this content cell
     const row = contentCell.closest('tr');
     if (!row) {
-      console.warn('Could not find table row for content cell');
-      this.addSimpleSymbolTooltips(contentCell, currentFile);
-      return;
+      return false; // Can't get line number, fall back
     }
     
     const lineNumberCell = row.querySelector('.new-line-number, .old-line-number');
     if (!lineNumberCell || !lineNumberCell.textContent) {
-      // No line number found, fall back
-      this.addSimpleSymbolTooltips(contentCell, currentFile);
-      return;
+      return false; // No line number found, fall back
     }
     
     const lineNumber = parseInt(lineNumberCell.textContent.trim());
     if (isNaN(lineNumber)) {
-      // Invalid line number, fall back
-      this.addSimpleSymbolTooltips(contentCell, currentFile);
-      return;
+      return false; // Invalid line number, fall back
     }
     
     // Get semantic symbols for this file and line
     const semanticSymbols = this.getSemanticSymbolsForLine(currentFile, lineNumber);
-    console.log(`Semantic symbols for ${currentFile}:${lineNumber}:`, semanticSymbols);
-    
     if (semanticSymbols.length === 0) {
-      // No semantic symbols found for this line, fall back to simple highlighting
-      this.addSimpleSymbolTooltips(contentCell, currentFile);
-      return;
+      return false; // No semantic symbols found, fall back
     }
     
     // Find all identifier elements in the syntax-highlighted content
     const identifiers = contentCell.querySelectorAll('.syntax-identifier');
+    let highlightedAny = false;
     
     identifiers.forEach(identifier => {
       const symbolName = identifier.textContent.trim();
@@ -369,10 +364,13 @@ class DiffViewer {
           
           if (relations.length > 0 || usageInPR.length > 0) {
             this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
+            highlightedAny = true;
           }
         }
       }
     });
+    
+    return highlightedAny;
   }
   
   addSimpleSymbolTooltips(contentCell, currentFile) {

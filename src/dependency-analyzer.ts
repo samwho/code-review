@@ -7,7 +7,7 @@ import { APP_CONFIG } from './config';
 import { ImportParser } from './analyzers/import-parser';
 import { ExportParser } from './analyzers/export-parser';
 import { FunctionParser } from './analyzers/function-parser';
-import { SymbolExtractor } from './analyzers/symbol-extractor';
+// Removed SymbolExtractor - using semantic analysis instead
 import type {
   ImportDeclaration,
   ExportDeclaration,
@@ -34,14 +34,12 @@ export class DependencyAnalyzer {
   private readonly importParser: ImportParser;
   private readonly exportParser: ExportParser;
   private readonly functionParser: FunctionParser;
-  private readonly symbolExtractor: SymbolExtractor;
 
   constructor() {
     this.semanticAnalyzer = new SemanticAnalyzer();
     this.importParser = new ImportParser();
     this.exportParser = new ExportParser();
     this.functionParser = new FunctionParser();
-    this.symbolExtractor = new SymbolExtractor(APP_CONFIG.TYPESCRIPT_KEYWORDS);
   }
 
   /**
@@ -51,10 +49,9 @@ export class DependencyAnalyzer {
     const lines = content.split('\n');
     const imports: ImportDeclaration[] = [];
     const exports: ExportDeclaration[] = [];
-    const symbols: SymbolReference[] = [];
     const dependencies: string[] = [];
 
-    // Parse each line for imports, exports, and symbols
+    // Parse each line for imports and exports only
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       const lineNumber = i + 1;
@@ -73,10 +70,6 @@ export class DependencyAnalyzer {
       if (exportDeclaration) {
         exports.push(exportDeclaration);
       }
-
-      // Extract symbols
-      const lineSymbols = this.symbolExtractor.extractSymbols(line, lineNumber);
-      symbols.push(...lineSymbols);
     }
 
     // Extract function definitions
@@ -86,7 +79,7 @@ export class DependencyAnalyzer {
       filename,
       imports,
       exports,
-      symbols,
+      symbols: [], // Will be populated from semantic analysis
       dependencies,
       functions
     };
@@ -111,6 +104,8 @@ export class DependencyAnalyzer {
       const semanticAnalysis = semanticAnalyses.get(filename);
       if (semanticAnalysis) {
         analysis.semanticSymbols = semanticAnalysis.symbols;
+        // Convert semantic symbols to legacy SymbolReference format for compatibility
+        analysis.symbols = this.convertSemanticToSymbolReferences(semanticAnalysis.symbols);
       }
       
       nodes.set(filename, analysis);
@@ -274,5 +269,42 @@ export class DependencyAnalyzer {
     return graph.edges
       .filter(edge => edge.from === node)
       .map(edge => edge.to);
+  }
+
+  /**
+   * Converts semantic symbols to legacy SymbolReference format for backward compatibility
+   */
+  private convertSemanticToSymbolReferences(semanticSymbols: import('./semantic-analyzer').SemanticSymbol[]): SymbolReference[] {
+    return semanticSymbols.map(symbol => ({
+      name: symbol.name,
+      line: symbol.line,
+      column: symbol.column,
+      context: this.inferSymbolContext(symbol)
+    }));
+  }
+
+  /**
+   * Infers symbol context from semantic information
+   */
+  private inferSymbolContext(symbol: import('./semantic-analyzer').SemanticSymbol): SymbolContext {
+    if (symbol.isExported) {
+      return 'declaration';
+    }
+    
+    // Use the semantic kind to infer context
+    switch (symbol.kind) {
+      case 'function':
+      case 'method':
+      case 'class':
+      case 'interface':
+      case 'type':
+      case 'enum':
+        return 'declaration';
+      case 'variable':
+      case 'parameter':
+        return 'assignment';
+      default:
+        return 'usage';
+    }
   }
 }
