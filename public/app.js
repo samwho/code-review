@@ -5,6 +5,8 @@ class DiffViewer {
     this.loadDiffButton = document.getElementById('load-diff');
     this.diffContainer = document.getElementById('diff-container');
     this.loading = document.getElementById('loading');
+    this.themeToggle = document.getElementById('theme-toggle');
+    this.highlighter = new SyntaxHighlighter();
 
     this.init();
   }
@@ -12,6 +14,8 @@ class DiffViewer {
   async init() {
     await this.loadBranches();
     this.loadDiffButton.addEventListener('click', () => this.loadDiff());
+    this.themeToggle.addEventListener('click', () => this.toggleTheme());
+    this.initTheme();
   }
 
   async loadBranches() {
@@ -118,8 +122,9 @@ class DiffViewer {
     const table = document.createElement('table');
     table.className = 'diff-table';
 
+    const language = this.detectLanguage(file.filename);
     file.lines.forEach(line => {
-      const row = this.createLineElement(line);
+      const row = this.createLineElement(line, language);
       table.appendChild(row);
     });
 
@@ -129,7 +134,7 @@ class DiffViewer {
     return fileDiv;
   }
 
-  createLineElement(line) {
+  createLineElement(line, language = 'text') {
     const row = document.createElement('tr');
     
     if (line.type === 'added') {
@@ -153,12 +158,37 @@ class DiffViewer {
 
     const contentCell = document.createElement('td');
     contentCell.className = 'line-content';
-    contentCell.textContent = line.content;
+    
+    // Apply syntax highlighting for TypeScript/JavaScript files
+    if (this.isHighlightableLanguage(language)) {
+      contentCell.innerHTML = this.highlighter.highlight(line.content, language);
+    } else {
+      contentCell.textContent = line.content;
+    }
 
     row.appendChild(lineNumberCell);
     row.appendChild(contentCell);
     
     return row;
+  }
+
+  detectLanguage(filename) {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'ts':
+        return 'typescript';
+      case 'js':
+      case 'jsx':
+        return 'javascript';
+      case 'tsx':
+        return 'typescript';
+      default:
+        return 'text';
+    }
+  }
+
+  isHighlightableLanguage(language) {
+    return ['typescript', 'javascript', 'ts', 'js'].includes(language.toLowerCase());
   }
 
   showLoading(show) {
@@ -172,6 +202,28 @@ class DiffViewer {
     
     this.diffContainer.innerHTML = '';
     this.diffContainer.appendChild(errorDiv);
+  }
+
+  initTheme() {
+    // Check for saved theme preference or default to light mode
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    this.setTheme(savedTheme);
+  }
+
+  toggleTheme() {
+    const currentTheme = document.documentElement.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    this.setTheme(newTheme);
+  }
+
+  setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    
+    // Update the theme toggle icon
+    const themeIcon = this.themeToggle.querySelector('.theme-icon');
+    themeIcon.textContent = theme === 'dark' ? '☀️' : '🌙';
+    this.themeToggle.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
   }
 }
 
