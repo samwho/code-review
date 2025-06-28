@@ -7,7 +7,14 @@ class DiffViewer {
     this.diffContainer = document.getElementById('diff-container');
     this.loading = document.getElementById('loading');
     this.themeToggle = document.getElementById('theme-toggle');
+    this.highlightToggle = document.getElementById('highlight-toggle');
     this.highlighter = new SyntaxHighlighter();
+    
+    // Highlighting settings
+    this.highlightSettings = {
+      functionsOnly: true, // Default to functions only
+      showVariables: false
+    };
 
     this.init();
   }
@@ -16,6 +23,7 @@ class DiffViewer {
     await this.loadBranches();
     this.loadDiffButton.addEventListener('click', () => this.loadDiff());
     this.themeToggle.addEventListener('click', () => this.toggleTheme());
+    this.highlightToggle.addEventListener('click', () => this.toggleHighlighting());
     this.initTheme();
   }
 
@@ -94,6 +102,7 @@ class DiffViewer {
     // Store graph and files for symbol relationship lookups
     this.dependencyGraph = graph;
     this.currentDiffFiles = files;
+    this.currentOrder = order;
 
     // Add ordering info header
     if (order !== 'alphabetical') {
@@ -282,13 +291,38 @@ class DiffViewer {
     this.themeToggle.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
   }
 
+  toggleHighlighting() {
+    this.highlightSettings.showVariables = !this.highlightSettings.showVariables;
+    this.highlightSettings.functionsOnly = !this.highlightSettings.showVariables;
+    
+    // Update the toggle button
+    const highlightIcon = this.highlightToggle.querySelector('.highlight-icon');
+    const highlightText = this.highlightToggle.querySelector('.highlight-text');
+    
+    if (this.highlightSettings.showVariables) {
+      highlightIcon.textContent = '🔍';
+      highlightText.textContent = 'All Symbols';
+      this.highlightToggle.title = 'Switch to functions only';
+    } else {
+      highlightIcon.textContent = '🔧';
+      highlightText.textContent = 'Functions Only';
+      this.highlightToggle.title = 'Show variable highlighting';
+    }
+    
+    // Re-render the current diff to apply new highlighting
+    if (this.currentDiffFiles) {
+      this.diffContainer.innerHTML = '';
+      this.renderDiff(this.currentDiffFiles, this.currentOrder || 'alphabetical', this.dependencyGraph);
+    }
+  }
+
   addSymbolTooltips(contentCell, currentFile) {
     // Find all identifier elements in the syntax-highlighted content
     const identifiers = contentCell.querySelectorAll('.syntax-identifier');
     
     identifiers.forEach(identifier => {
       const symbolName = identifier.textContent.trim();
-      if (symbolName && symbolName.length > 1) {
+      if (symbolName && symbolName.length > 1 && this.shouldHighlightSymbol(symbolName, identifier)) {
         const relations = this.findSymbolRelations(symbolName, currentFile);
         const usageInPR = this.findUsageInPR(symbolName, currentFile);
         
@@ -297,6 +331,105 @@ class DiffViewer {
         }
       }
     });
+  }
+
+  shouldHighlightSymbol(symbolName, element) {
+    // Standard library and built-in symbols to exclude
+    const standardLibrarySymbols = new Set([
+      // JavaScript built-ins
+      'Promise', 'Array', 'Object', 'String', 'Number', 'Boolean', 'Date', 'RegExp', 'Error',
+      'Math', 'JSON', 'console', 'window', 'document', 'localStorage', 'sessionStorage',
+      'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval', 'fetch', 'Response',
+      'Request', 'Headers', 'FormData', 'URLSearchParams', 'URL', 'Blob', 'File',
+      
+      // Node.js built-ins
+      'process', 'Buffer', 'global', '__dirname', '__filename', 'require', 'module', 'exports',
+      
+      // TypeScript built-ins
+      'Record', 'Partial', 'Required', 'Pick', 'Omit', 'Exclude', 'Extract', 'NonNullable',
+      'ReturnType', 'InstanceType', 'ThisType', 'Parameters', 'ConstructorParameters',
+      
+      // Common framework globals (React, Vue, etc.)
+      'React', 'Vue', 'Angular', 'Component', 'useState', 'useEffect', 'useContext',
+      
+      // Common testing globals
+      'describe', 'it', 'test', 'expect', 'jest', 'beforeEach', 'afterEach', 'beforeAll', 'afterAll',
+      
+      // Common single letter variables and short names
+      'i', 'j', 'k', 'x', 'y', 'z', 'a', 'b', 'c', 'e', 'el', 'id', 'key', 'val', 'len',
+      
+      // Common keywords that might be highlighted as identifiers
+      'true', 'false', 'null', 'undefined', 'this', 'super', 'new', 'typeof', 'instanceof'
+    ]);
+    
+    // Skip standard library symbols
+    if (standardLibrarySymbols.has(symbolName)) {
+      return false;
+    }
+    
+    // Skip very short symbols (likely variables)
+    if (symbolName.length < 3) {
+      return false;
+    }
+    
+    // Check if this looks like a function by examining context
+    const isLikelyFunction = this.isLikelyFunction(symbolName, element);
+    
+    // If it's a function, always show it
+    if (isLikelyFunction) {
+      return true;
+    }
+    
+    // If we're showing variables and it's not a standard library symbol, show it
+    if (this.highlightSettings.showVariables) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  isLikelyFunction(symbolName, element) {
+    // Get the line content around this symbol
+    const lineElement = element.closest('tr');
+    if (!lineElement) return false;
+    
+    const lineContent = lineElement.textContent || '';
+    const symbolIndex = lineContent.indexOf(symbolName);
+    
+    if (symbolIndex === -1) return false;
+    
+    // Check for function call pattern: symbolName(
+    const afterSymbol = lineContent.substring(symbolIndex + symbolName.length);
+    if (afterSymbol.match(/^\s*\(/)) {
+      return true;
+    }
+    
+    // Check for function declaration patterns
+    const beforeSymbol = lineContent.substring(0, symbolIndex);
+    if (beforeSymbol.match(/function\s+$/) || 
+        beforeSymbol.match(/const\s+\w*\s*=\s*(async\s+)?$/) ||
+        beforeSymbol.match(/\w+\.\w*\s*=\s*(async\s+)?$/) ||
+        beforeSymbol.match(/async\s+$/) ||
+        beforeSymbol.match(/export\s+(async\s+)?function\s+$/)) {
+      return true;
+    }
+    
+    // Check for method calls: .symbolName(
+    if (beforeSymbol.match(/\.\s*$/) && afterSymbol.match(/^\s*\(/)) {
+      return true;
+    }
+    
+    // Check if it's in our dependency graph as a function
+    if (this.dependencyGraph && this.dependencyGraph.nodes) {
+      for (const node of this.dependencyGraph.nodes) {
+        const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
+        if (functionMatch) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
 
   findSymbolRelations(symbolName, currentFile) {
