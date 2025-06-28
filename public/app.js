@@ -259,6 +259,12 @@ class DiffViewer {
   highlightWithPrism(code, language) {
     if (!code || typeof code !== 'string') return '';
     
+    // Check if Prism is loaded and ready
+    if (typeof window.Prism === 'undefined' || !window.Prism.languages) {
+      console.warn('Prism.js not loaded, using fallback highlighting');
+      return this.simpleHighlightFallback(code, language);
+    }
+    
     // Map our language names to Prism language names
     const languageMap = {
       'typescript': 'typescript',
@@ -269,12 +275,53 @@ class DiffViewer {
     
     const prismLanguage = languageMap[language.toLowerCase()] || 'javascript';
     
-    // Use Prism to highlight the code
-    if (window.Prism && window.Prism.languages[prismLanguage]) {
-      return window.Prism.highlight(code, window.Prism.languages[prismLanguage], prismLanguage);
+    // Ensure the language is loaded
+    if (!window.Prism.languages[prismLanguage]) {
+      console.warn(`Prism language '${prismLanguage}' not loaded, using fallback`);
+      return this.simpleHighlightFallback(code, language);
     }
     
-    // Fallback if Prism is not available
+    try {
+      // Use Prism to highlight the code
+      return window.Prism.highlight(code, window.Prism.languages[prismLanguage], prismLanguage);
+    } catch (error) {
+      console.warn('Prism highlighting failed:', error);
+      return this.simpleHighlightFallback(code, language);
+    }
+  }
+
+  simpleHighlightFallback(code, language) {
+    if (language === 'typescript' || language === 'javascript' || language === 'ts' || language === 'js') {
+      // Start with the raw code
+      let highlighted = code;
+      
+      // First, escape HTML characters
+      highlighted = highlighted.replace(/&/g, '&amp;')
+                              .replace(/</g, '&lt;')
+                              .replace(/>/g, '&gt;');
+      
+      // Comments (to avoid keyword highlighting inside comments)
+      highlighted = highlighted.replace(/(\/\/.*$)/gm, 
+        '<span class="token comment">$1</span>');
+      highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, 
+        '<span class="token comment">$1</span>');
+      
+      // Strings (to avoid keyword highlighting inside strings)
+      highlighted = highlighted.replace(/([&#39;&#34;`])((?:\\.|(?!\1)[^\\])*?)\1/g, 
+        '<span class="token string">$1$2$1</span>');
+      
+      // Keywords (avoid those already in spans)
+      highlighted = highlighted.replace(/(?!<[^>]*>)\b(import|export|from|as|default|const|let|var|function|class|interface|type|enum|async|await|return|if|else|for|while|do|switch|case|try|catch|finally|throw|new|this|super|true|false|null|undefined)\b(?![^<]*<\/span>)/g, 
+        '<span class="token keyword">$1</span>');
+      
+      // Function names (simple detection, avoid those already in spans)
+      highlighted = highlighted.replace(/(?!<[^>]*>)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\((?![^<]*<\/span>)/g, 
+        '<span class="token function">$1</span>(');
+      
+      return highlighted;
+    }
+    
+    // For non-JS/TS languages, just escape HTML
     return this.escapeHtml(code);
   }
 
