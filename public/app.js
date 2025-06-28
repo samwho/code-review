@@ -361,39 +361,66 @@ class DiffViewer {
   }
 
   addSymbolTooltips(contentCell, currentFile) {
-    // Use only semantic analysis for symbol tooltips
-    this.addSemanticSymbolTooltips(contentCell, currentFile);
+    // Only highlight symbols that are in our extracted symbol list
+    this.addExtractedSymbolTooltips(contentCell, currentFile);
   }
   
-  addSemanticSymbolTooltips(contentCell, currentFile) {
-    // Find all identifier elements in the syntax-highlighted content
-    const identifiers = contentCell.querySelectorAll('.token.function, .token.class-name, .token.property, .token.parameter, .token.variable');
-    console.log(`Found ${identifiers.length} identifiers in`, currentFile);
+  addExtractedSymbolTooltips(contentCell, currentFile) {
+    if (!this.fileSymbols || this.fileSymbols.length === 0) {
+      return;
+    }
+
+    // Get all symbols from all changed files for highlighting
+    const allSymbols = new Map();
+    for (const fileSymbols of this.fileSymbols) {
+      for (const symbol of fileSymbols.symbols) {
+        allSymbols.set(symbol.name, {
+          ...symbol,
+          filename: fileSymbols.filename
+        });
+      }
+    }
+
+    // Find and highlight only symbols that exist in our extracted list
+    // Look for Prism.js tokens that might be our symbols
+    const tokens = contentCell.querySelectorAll('.token');
     
-    identifiers.forEach(identifier => {
-      const symbolName = identifier.textContent.trim();
-      if (symbolName && symbolName.length > 2) {
-        console.log(`Checking symbol: ${symbolName}`);
+    tokens.forEach(token => {
+      const text = token.textContent.trim();
+      
+      // Skip very short text or empty tokens
+      if (!text || text.length < 2) return;
+      
+      // Check if this token text matches any of our extracted symbols
+      const symbolInfo = allSymbols.get(text);
+      if (symbolInfo) {
+        // Find references to this symbol in other changed files
+        const references = this.findSymbolReferences(text, currentFile);
         
-        // Check if this symbol is defined in any of the changed files
-        const symbolInfo = this.findSymbolInChangedFiles(symbolName);
+        // Create relations array with definition and references
+        const relations = [];
         
-        if (symbolInfo) {
-          console.log(`Found symbol ${symbolName} defined in ${symbolInfo.filename}`);
-          const usageInPR = this.findUsageInPR(symbolName, currentFile);
-          
-          // Create a simple relations array with just the definition
-          const relations = [{
-            type: 'defined_in',
-            file: symbolInfo.filename,
-            line: symbolInfo.line,
-            symbolType: symbolInfo.type,
-            isExported: symbolInfo.isExported
-          }];
-          
-          console.log(`Making ${symbolName} interactive`);
-          this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
-        }
+        // Add the definition
+        relations.push({
+          type: 'defined_in',
+          file: symbolInfo.filename,
+          line: symbolInfo.line,
+          symbolType: symbolInfo.type,
+          isExported: symbolInfo.isExported,
+          className: symbolInfo.className
+        });
+
+        // Add references from other files
+        references.forEach(ref => {
+          relations.push({
+            type: 'used_in',
+            file: ref.file,
+            line: ref.line,
+            context: ref.context
+          });
+        });
+        
+        this.makeSymbolInteractive(token, text, relations, []);
       }
     });
   }
@@ -421,30 +448,56 @@ class DiffViewer {
 
 
 
-  findUsageInPR(symbolName, currentFile) {
+  findSymbolReferences(symbolName, currentFile) {
     if (!this.currentDiffFiles) {
       return [];
     }
 
-    const usages = [];
+    const references = [];
     
     for (const file of this.currentDiffFiles) {
       if (file.filename === currentFile) continue; // Skip the current file
+      
+      const language = this.detectLanguage(file.filename);
+      if (!this.isHighlightableLanguage(language)) continue;
       
       // Search through diff lines for symbol usage
       for (const line of file.lines) {
         if (line.type === 'context' && line.isHunkHeader) continue;
         
-        // Simple symbol detection in line content
-        const regex = new RegExp(`\\b${symbolName}\\b`, 'g');
-        const matches = line.content.match(regex);
+        // Use Prism.js to parse the line and find tokens
+        const highlightedContent = this.highlightWithPrism(line.content, language);
         
-        if (matches) {
+        // Create a temporary element to parse the tokens
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = highlightedContent;
+        
+        // Look for our symbol in the tokens (excluding strings and comments)
+        const tokens = tempDiv.querySelectorAll('.token');
+        let foundSymbol = false;
+        
+        tokens.forEach(token => {
+          const tokenText = token.textContent.trim();
+          const tokenClass = token.className;
+          
+          // Skip tokens that are strings, comments, or other non-code elements
+          if (tokenClass.includes('string') || 
+              tokenClass.includes('comment') || 
+              tokenClass.includes('template-string')) {
+            return;
+          }
+          
+          if (tokenText === symbolName) {
+            foundSymbol = true;
+          }
+        });
+        
+        if (foundSymbol) {
           const lineNumber = line.type === 'added' ? line.lineNumber : 
                            line.type === 'removed' ? line.oldLineNumber : 
                            line.lineNumber || line.oldLineNumber;
           
-          usages.push({
+          references.push({
             file: file.filename,
             line: lineNumber,
             type: line.type,
@@ -455,7 +508,7 @@ class DiffViewer {
       }
     }
     
-    return usages;
+    return references;
   }
 
   determineUsageContext(lineContent, symbolName) {
@@ -600,26 +653,46 @@ class DiffViewer {
   }
 
   generateTooltipContent(symbolName, relations, usageInPR = []) {
-    let content = `<div class="tooltip-header"><strong>${symbolName}</strong></div>`;
+    // Check if this is a method (has className in the definition)
+    const definitionRelation = relations.find(r => r.type === 'defined_in');
+    const displayName = definitionRelation && definitionRelation.className ? 
+      `${definitionRelation.className}.${symbolName}` : symbolName;
     
-    if (relations.length === 0 && usageInPR.length === 0) {
+    let content = `<div class="tooltip-header"><strong>${displayName}</strong></div>`;
+    
+    if (relations.length === 0) {
       return content + '<div class="tooltip-body">No references found</div>';
     }
     
     content += '<div class="tooltip-body">';
     
     // Show symbol definition
-    if (relations.length > 0) {
+    if (definitionRelation) {
       content += '<div class="relation-section">';
-      const relation = relations[0]; // We only have one relation type now
-      const symbolIcon = relation.symbolType === 'class' ? '🏛️' : 
-                        relation.symbolType === 'function' ? '🔧' : '📤';
-      const exportBadge = relation.isExported ? ' <span class="export-badge">EXPORTED</span>' : '';
+      const symbolIcon = definitionRelation.symbolType === 'class' ? '🏛️' : 
+                        definitionRelation.symbolType === 'function' ? '🔧' : '📤';
+      const exportBadge = definitionRelation.isExported ? ' <span class="export-badge">EXPORTED</span>' : '';
+      const symbolTypeDisplay = definitionRelation.className ? 'method' : definitionRelation.symbolType;
       
-      content += `<div class="relation-title">${symbolIcon} ${relation.symbolType} defined in:</div>`;
-      content += `<div class="relation-item" data-file="${relation.file}" data-line="${relation.line}">
-        <span class="file-link">${relation.file}</span>:${relation.line}${exportBadge}
+      content += `<div class="relation-title">${symbolIcon} ${symbolTypeDisplay} defined in:</div>`;
+      content += `<div class="relation-item" data-file="${definitionRelation.file}" data-line="${definitionRelation.line}">
+        <span class="file-link">${definitionRelation.file}</span>:${definitionRelation.line}${exportBadge}
       </div>`;
+      content += '</div>';
+    }
+    
+    // Show references in other files
+    const references = relations.filter(r => r.type === 'used_in');
+    if (references.length > 0) {
+      content += '<div class="relation-section">';
+      content += '<div class="relation-title">📍 Used in this PR:</div>';
+      references.forEach(ref => {
+        const contextIcon = this.getContextIcon(ref.context);
+        content += `<div class="relation-item" data-file="${ref.file}" data-line="${ref.line}">
+          <span class="file-link">${ref.file}</span>:${ref.line} ${contextIcon}
+          <div class="usage-context">${ref.context ? ref.context.replace('_', ' ') : 'usage'}</div>
+        </div>`;
+      });
       content += '</div>';
     }
     

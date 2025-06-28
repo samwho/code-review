@@ -6,12 +6,26 @@
 import { Project } from 'ts-morph';
 import type { FileDiff } from './types/git';
 
-export interface SimpleSymbol {
-  name: string;
-  type: 'class' | 'function' | 'export';
-  line: number;
-  isExported?: boolean;
-}
+export type SimpleSymbol = 
+  | {
+      type: 'class';
+      name: string;
+      line: number;
+      isExported: boolean;
+    }
+  | {
+      type: 'function';
+      name: string;
+      line: number;
+      isExported: boolean;
+      className?: string; // Present for class methods, undefined for standalone functions
+    }
+  | {
+      type: 'export';
+      name: string;
+      line: number;
+      isExported: true; // Exports are always exported
+    };
 
 export interface FileSymbols {
   filename: string;
@@ -71,15 +85,42 @@ export class SimpleSymbolExtractor {
     try {
       const sourceFile = this.project.createSourceFile(filename, content, { overwrite: true });
 
-      // Extract class declarations
+      // Extract class declarations and their methods
       sourceFile.getClasses().forEach(classDecl => {
-        const name = classDecl.getName();
-        if (name) {
+        const className = classDecl.getName();
+        if (className) {
           symbols.push({
-            name,
+            name: className,
             type: 'class',
             line: classDecl.getStartLineNumber(),
             isExported: classDecl.isExported()
+          });
+
+          // Extract class methods
+          classDecl.getMethods().forEach(methodDecl => {
+            const methodName = methodDecl.getName();
+            if (methodName) {
+              symbols.push({
+                name: methodName,
+                type: 'function',
+                line: methodDecl.getStartLineNumber(),
+                isExported: classDecl.isExported(), // Methods inherit class export status
+                className: className
+              });
+            }
+          });
+        }
+      });
+
+      // Extract interface declarations
+      sourceFile.getInterfaces().forEach(interfaceDecl => {
+        const name = interfaceDecl.getName();
+        if (name) {
+          symbols.push({
+            name,
+            type: 'export',
+            line: interfaceDecl.getStartLineNumber(),
+            isExported: interfaceDecl.isExported()
           });
         }
       });
