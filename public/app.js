@@ -91,8 +91,9 @@ class DiffViewer {
       return;
     }
 
-    // Store graph for symbol relationship lookups
+    // Store graph and files for symbol relationship lookups
     this.dependencyGraph = graph;
+    this.currentDiffFiles = files;
 
     // Add ordering info header
     if (order !== 'alphabetical') {
@@ -289,8 +290,10 @@ class DiffViewer {
       const symbolName = identifier.textContent.trim();
       if (symbolName && symbolName.length > 1) {
         const relations = this.findSymbolRelations(symbolName, currentFile);
-        if (relations.length > 0) {
-          this.makeSymbolInteractive(identifier, symbolName, relations);
+        const usageInPR = this.findUsageInPR(symbolName, currentFile);
+        
+        if (relations.length > 0 || usageInPR.length > 0) {
+          this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
         }
       }
     });
@@ -350,6 +353,73 @@ class DiffViewer {
     return relations;
   }
 
+  findUsageInPR(symbolName, currentFile) {
+    if (!this.currentDiffFiles) {
+      return [];
+    }
+
+    const usages = [];
+    
+    for (const file of this.currentDiffFiles) {
+      if (file.filename === currentFile) continue; // Skip the current file
+      
+      // Search through diff lines for symbol usage
+      for (const line of file.lines) {
+        if (line.type === 'context' && line.isHunkHeader) continue;
+        
+        // Simple symbol detection in line content
+        const regex = new RegExp(`\\b${symbolName}\\b`, 'g');
+        const matches = line.content.match(regex);
+        
+        if (matches) {
+          const lineNumber = line.type === 'added' ? line.lineNumber : 
+                           line.type === 'removed' ? line.oldLineNumber : 
+                           line.lineNumber || line.oldLineNumber;
+          
+          usages.push({
+            file: file.filename,
+            line: lineNumber,
+            type: line.type,
+            content: line.content.trim(),
+            context: this.determineUsageContext(line.content, symbolName)
+          });
+        }
+      }
+    }
+    
+    return usages;
+  }
+
+  determineUsageContext(lineContent, symbolName) {
+    const line = lineContent.trim();
+    
+    // Function call pattern
+    if (line.includes(`${symbolName}(`)) {
+      return 'function_call';
+    }
+    
+    // Property access
+    if (line.includes(`.${symbolName}`) || line.includes(`${symbolName}.`)) {
+      return 'property_access';
+    }
+    
+    // Assignment
+    if (line.includes(`= ${symbolName}`) || line.includes(`${symbolName} =`)) {
+      return 'assignment';
+    }
+    
+    // Import/export
+    if (line.includes('import') && line.includes(symbolName)) {
+      return 'import';
+    }
+    
+    if (line.includes('export') && line.includes(symbolName)) {
+      return 'export';
+    }
+    
+    return 'reference';
+  }
+
   isFunctionModified(functionName, filename) {
     if (!this.dependencyGraph || !this.dependencyGraph.modifiedFunctions) {
       return false;
@@ -359,20 +429,24 @@ class DiffViewer {
     return modifiedInFile && modifiedInFile.functions.some(func => func.name === functionName);
   }
 
-  makeSymbolInteractive(element, symbolName, relations) {
+  makeSymbolInteractive(element, symbolName, relations, usageInPR = []) {
     element.classList.add('symbol-interactive');
     element.setAttribute('data-symbol', symbolName);
     
-    // Add special highlighting for modified functions
+    // Add special highlighting for modified functions or functions with usage in PR
     const hasModifiedFunction = relations.some(rel => rel.type === 'function_definition' && rel.isModified);
+    const hasUsageInPR = usageInPR.length > 0;
+    
     if (hasModifiedFunction) {
       element.classList.add('symbol-modified');
+    } else if (hasUsageInPR) {
+      element.classList.add('symbol-used-in-pr');
     }
     
     // Create tooltip
     const tooltip = document.createElement('div');
     tooltip.className = 'symbol-tooltip';
-    tooltip.innerHTML = this.generateTooltipContent(symbolName, relations);
+    tooltip.innerHTML = this.generateTooltipContent(symbolName, relations, usageInPR);
     
     let hideTimeout;
     let isTooltipVisible = false;
@@ -465,10 +539,10 @@ class DiffViewer {
     });
   }
 
-  generateTooltipContent(symbolName, relations) {
+  generateTooltipContent(symbolName, relations, usageInPR = []) {
     let content = `<div class="tooltip-header"><strong>${symbolName}</strong></div>`;
     
-    if (relations.length === 0) {
+    if (relations.length === 0 && usageInPR.length === 0) {
       return content + '<div class="tooltip-body">No cross-file references found</div>';
     }
     
@@ -488,6 +562,22 @@ class DiffViewer {
         content += `<div class="relation-item${rel.isModified ? ' modified-function' : ''}" data-file="${rel.file}" data-line="${rel.line}">
           <span class="file-link">${rel.file}</span>:${rel.line}
           <div class="function-signature">${symbolName}${paramText}${modifiedBadge}</div>
+        </div>`;
+      });
+      content += '</div>';
+    }
+    
+    // Show usage in current PR (new and important)
+    if (usageInPR.length > 0) {
+      content += '<div class="relation-section">';
+      content += '<div class="relation-title">📍 Used in this PR:</div>';
+      usageInPR.forEach(usage => {
+        const contextIcon = this.getContextIcon(usage.context);
+        const typeClass = usage.type === 'added' ? ' pr-usage-added' : usage.type === 'removed' ? ' pr-usage-removed' : '';
+        content += `<div class="relation-item pr-usage${typeClass}" data-file="${usage.file}" data-line="${usage.line}">
+          <span class="file-link">${usage.file}</span>:${usage.line} ${contextIcon}
+          <div class="usage-context">${usage.context.replace('_', ' ')}</div>
+          <div class="usage-preview">${usage.content}</div>
         </div>`;
       });
       content += '</div>';
@@ -518,6 +608,17 @@ class DiffViewer {
     
     content += '</div>';
     return content;
+  }
+
+  getContextIcon(context) {
+    switch (context) {
+      case 'function_call': return '📞';
+      case 'property_access': return '🔗';
+      case 'assignment': return '📝';
+      case 'import': return '📥';
+      case 'export': return '📤';
+      default: return '👁️';
+    }
   }
 
   positionTooltip(tooltip, target) {

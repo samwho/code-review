@@ -8,6 +8,7 @@
   --text-secondary: #656d76;
   --accent-green: #1f883d;
   --accent-red: #cf222e;
+  --accent-blue: #0969da;
   --bg-addition: #d1f4cd;
   --bg-deletion: #ffd8d3;
   --line-bg-addition: #acf2bd;
@@ -33,6 +34,7 @@
   --text-secondary: #8b949e;
   --accent-green: #238636;
   --accent-red: #da3633;
+  --accent-blue: #58a6ff;
   --bg-addition: #033a16;
   --bg-deletion: #67060c;
   --line-bg-addition: #238636;
@@ -375,6 +377,19 @@ body {
   background-color: rgba(218, 54, 51, 0.2);
 }
 
+/* Function used in PR highlighting */
+.symbol-used-in-pr {
+  text-decoration-color: var(--accent-blue) !important;
+  font-weight: 500;
+  background-color: rgba(13, 110, 253, 0.1);
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+.symbol-used-in-pr:hover {
+  background-color: rgba(13, 110, 253, 0.2);
+}
+
 .symbol-tooltip {
   display: none;
   background-color: var(--bg-primary);
@@ -459,6 +474,44 @@ body {
   font-size: 11px;
   color: var(--text-secondary);
   margin-top: 2px;
+}
+
+/* PR usage tooltip styles */
+.pr-usage {
+  border-left: 3px solid var(--accent-blue);
+  background-color: rgba(13, 110, 253, 0.05);
+}
+
+.pr-usage-added {
+  border-left-color: var(--accent-green);
+  background-color: rgba(40, 167, 69, 0.05);
+}
+
+.pr-usage-removed {
+  border-left-color: var(--accent-red);
+  background-color: rgba(218, 54, 51, 0.05);
+}
+
+.usage-context {
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-style: italic;
+  text-transform: capitalize;
+  margin-top: 1px;
+}
+
+.usage-preview {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 10px;
+  color: var(--text-primary);
+  background-color: var(--bg-tertiary);
+  padding: 2px 4px;
+  border-radius: 2px;
+  margin-top: 2px;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Navigation highlight animations */
