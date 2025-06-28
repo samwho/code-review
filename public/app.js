@@ -317,41 +317,105 @@ class DiffViewer {
   }
 
   addSymbolTooltips(contentCell, currentFile) {
+    // For now, let's fall back to the simple approach while we debug semantic analysis
+    this.addSimpleSymbolTooltips(contentCell, currentFile);
+    return;
+    
+    // TODO: Re-enable semantic analysis once debugging is complete
+    // Get the line number for this content cell
+    const row = contentCell.closest('tr');
+    if (!row) {
+      console.warn('Could not find table row for content cell');
+      this.addSimpleSymbolTooltips(contentCell, currentFile);
+      return;
+    }
+    
+    const lineNumberCell = row.querySelector('.new-line-number, .old-line-number');
+    if (!lineNumberCell || !lineNumberCell.textContent) {
+      // No line number found, fall back
+      this.addSimpleSymbolTooltips(contentCell, currentFile);
+      return;
+    }
+    
+    const lineNumber = parseInt(lineNumberCell.textContent.trim());
+    if (isNaN(lineNumber)) {
+      // Invalid line number, fall back
+      this.addSimpleSymbolTooltips(contentCell, currentFile);
+      return;
+    }
+    
+    // Get semantic symbols for this file and line
+    const semanticSymbols = this.getSemanticSymbolsForLine(currentFile, lineNumber);
+    console.log(`Semantic symbols for ${currentFile}:${lineNumber}:`, semanticSymbols);
+    
+    if (semanticSymbols.length === 0) {
+      // No semantic symbols found for this line, fall back to simple highlighting
+      this.addSimpleSymbolTooltips(contentCell, currentFile);
+      return;
+    }
+    
     // Find all identifier elements in the syntax-highlighted content
     const identifiers = contentCell.querySelectorAll('.syntax-identifier');
     
     identifiers.forEach(identifier => {
       const symbolName = identifier.textContent.trim();
-      if (symbolName && symbolName.length > 1 && this.shouldHighlightSymbol(symbolName, identifier)) {
-        const relations = this.findSymbolRelations(symbolName, currentFile);
-        const usageInPR = this.findUsageInPR(symbolName, currentFile);
+      if (symbolName && symbolName.length > 1) {
+        // Check if this identifier corresponds to a semantic symbol
+        const semanticSymbol = this.findSemanticSymbolAtPosition(semanticSymbols, symbolName, identifier, contentCell);
         
-        if (relations.length > 0 || usageInPR.length > 0) {
-          this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
+        if (semanticSymbol && this.shouldHighlightSemanticSymbol(semanticSymbol)) {
+          const relations = this.findSymbolRelations(symbolName, currentFile);
+          const usageInPR = this.findUsageInPR(symbolName, currentFile);
+          
+          if (relations.length > 0 || usageInPR.length > 0) {
+            this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
+          }
+        }
+      }
+    });
+  }
+  
+  addSimpleSymbolTooltips(contentCell, currentFile) {
+    // Fallback method when semantic analysis is not available
+    const identifiers = contentCell.querySelectorAll('.syntax-identifier');
+    
+    identifiers.forEach(identifier => {
+      const symbolName = identifier.textContent.trim();
+      if (symbolName && symbolName.length > 2) {
+        // Use the legacy symbol detection method
+        const symbolInfo = this.getSymbolInfo(symbolName);
+        if (symbolInfo) {
+          // If it's a function, always show it
+          if (symbolInfo.isFunction) {
+            const relations = this.findSymbolRelations(symbolName, currentFile);
+            const usageInPR = this.findUsageInPR(symbolName, currentFile);
+            
+            if (relations.length > 0 || usageInPR.length > 0) {
+              this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
+            }
+          }
+          // If we're showing variables and it's defined in our codebase, show it
+          else if (this.highlightSettings.showVariables) {
+            const relations = this.findSymbolRelations(symbolName, currentFile);
+            const usageInPR = this.findUsageInPR(symbolName, currentFile);
+            
+            if (relations.length > 0 || usageInPR.length > 0) {
+              this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
+            }
+          }
         }
       }
     });
   }
 
-  shouldHighlightSymbol(symbolName, element) {
+  shouldHighlightSemanticSymbol(semanticSymbol) {
     // Skip very short symbols
-    if (symbolName.length < 3) {
-      return false;
-    }
-    
-    // CRITICAL FIX: Don't highlight symbols inside comments or strings
-    if (this.isElementInCommentOrString(element)) {
-      return false;
-    }
-    
-    // Use semantic analysis to determine if this symbol is actually defined in our codebase
-    const symbolInfo = this.getSymbolInfo(symbolName);
-    if (!symbolInfo) {
+    if (semanticSymbol.name.length < 3) {
       return false;
     }
     
     // If it's a function, always show it
-    if (symbolInfo.isFunction) {
+    if (semanticSymbol.isFunction) {
       return true;
     }
     
@@ -360,30 +424,43 @@ class DiffViewer {
       return false;
     }
     
-    // If we're showing variables and it's defined in our codebase, show it
+    // Show variables and other symbols when not in functions-only mode
     return true;
   }
 
   /**
-   * Checks if an element is inside a comment or string literal
+   * Gets semantic symbols for a specific file and line number
    */
-  isElementInCommentOrString(element) {
-    // Check if the element itself is a comment or string
-    if (element.classList.contains('syntax-comment') || element.classList.contains('syntax-string')) {
-      return true;
+  getSemanticSymbolsForLine(filename, lineNumber) {
+    if (!this.dependencyGraph || !this.dependencyGraph.nodes) {
+      return [];
     }
     
-    // Check if any parent element is a comment or string
-    let parent = element.parentElement;
-    while (parent) {
-      if (parent.classList && 
-          (parent.classList.contains('syntax-comment') || parent.classList.contains('syntax-string'))) {
-        return true;
-      }
-      parent = parent.parentElement;
+    const fileNode = this.dependencyGraph.nodes.get(filename);
+    if (!fileNode || !fileNode.semanticSymbols) {
+      return [];
     }
     
-    return false;
+    // Return symbols that are on this line
+    return fileNode.semanticSymbols.filter(symbol => symbol.line === lineNumber);
+  }
+  
+  /**
+   * Finds the semantic symbol that corresponds to a DOM element at a specific position
+   */
+  findSemanticSymbolAtPosition(semanticSymbols, symbolName, element, contentCell) {
+    // Calculate the approximate column position of this element within the line
+    const elementText = element.textContent;
+    const cellText = contentCell.textContent;
+    const elementIndex = cellText.indexOf(elementText);
+    
+    if (elementIndex === -1) return null;
+    
+    // Find the semantic symbol with matching name and approximate column
+    return semanticSymbols.find(symbol => 
+      symbol.name === symbolName &&
+      Math.abs(symbol.column - elementIndex) < 5 // Allow some tolerance for position matching
+    );
   }
 
   getSymbolInfo(symbolName) {
