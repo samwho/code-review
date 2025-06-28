@@ -16,7 +16,7 @@ export interface FileDiff {
 }
 
 export class GitService {
-  constructor(private repoPath: string = '.') {}
+  constructor(private repoPath: string = './test-repo') {}
 
   async getDiff(baseBranch: string, compareBranch: string): Promise<FileDiff[]> {
     const proc = spawn(['git', 'diff', '--no-color', '--unified=3', `${baseBranch}...${compareBranch}`], {
