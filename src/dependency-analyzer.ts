@@ -25,12 +25,22 @@ export interface SymbolReference {
   context: 'usage' | 'declaration' | 'assignment';
 }
 
+export interface FunctionDefinition {
+  name: string;
+  startLine: number;
+  endLine: number;
+  isExported: boolean;
+  isAsync: boolean;
+  parameters: string[];
+}
+
 export interface FileAnalysis {
   filename: string;
   imports: ImportDeclaration[];
   exports: ExportDeclaration[];
   symbols: SymbolReference[];
   dependencies: string[];
+  functions: FunctionDefinition[];
 }
 
 export interface DependencyEdge {
@@ -43,6 +53,7 @@ export interface DependencyEdge {
 export interface DependencyGraph {
   nodes: Map<string, FileAnalysis>;
   edges: DependencyEdge[];
+  modifiedFunctions?: Map<string, FunctionDefinition[]>; // filename -> modified functions
 }
 
 export class DependencyAnalyzer {
@@ -63,6 +74,7 @@ export class DependencyAnalyzer {
     const exports: ExportDeclaration[] = [];
     const symbols: SymbolReference[] = [];
     const dependencies: string[] = [];
+    const functions: FunctionDefinition[] = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -88,12 +100,17 @@ export class DependencyAnalyzer {
       symbols.push(...lineSymbols);
     }
 
+    // Extract function definitions
+    const extractedFunctions = this.extractFunctions(content);
+    functions.push(...extractedFunctions);
+
     return {
       filename,
       imports,
       exports,
       symbols,
-      dependencies
+      dependencies,
+      functions
     };
   }
 
@@ -387,6 +404,116 @@ export class DependencyAnalyzer {
     
     // For now, ignore external modules (npm packages)
     return null;
+  }
+
+  private extractFunctions(content: string): FunctionDefinition[] {
+    const functions: FunctionDefinition[] = [];
+    const lines = content.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmedLine = line.trim();
+      
+      // Skip empty lines and comments
+      if (!trimmedLine || trimmedLine.startsWith('//') || trimmedLine.startsWith('/*')) {
+        continue;
+      }
+      
+      // Function declaration patterns
+      const functionPatterns = [
+        // Regular function: function name() { ... }
+        /^(export\s+)?(async\s+)?function\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\((.*?)\)/,
+        // Arrow function: const name = (...) => { ... }
+        /^(export\s+)?const\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*(async\s+)?\((.*?)\)\s*=>/,
+        // Method in class: methodName(...) { ... }
+        /^\s*(public|private|protected)?\s*(static\s+)?(async\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\((.*?)\)\s*[\{\:]/,
+        // Object method: name(...) { ... }
+        /^\s*([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\((.*?)\)\s*\{/
+      ];
+      
+      for (const pattern of functionPatterns) {
+        const match = trimmedLine.match(pattern);
+        if (match) {
+          let functionName: string;
+          let isExported = false;
+          let isAsync = false;
+          let parameters: string[] = [];
+          
+          if (pattern.source.includes('function\\s+')) {
+            // Regular function declaration
+            isExported = !!match[1];
+            isAsync = !!match[2];
+            functionName = match[3];
+            parameters = this.parseParameters(match[4]);
+          } else if (pattern.source.includes('const\\s+')) {
+            // Arrow function
+            isExported = !!match[1];
+            functionName = match[2];
+            isAsync = !!match[3];
+            parameters = this.parseParameters(match[4]);
+          } else if (pattern.source.includes('public|private|protected')) {
+            // Class method
+            isAsync = !!match[3];
+            functionName = match[4];
+            parameters = this.parseParameters(match[5]);
+          } else {
+            // Object method
+            functionName = match[1];
+            parameters = this.parseParameters(match[2]);
+          }
+          
+          // Find the end of the function (simple heuristic - look for matching braces)
+          const endLine = this.findFunctionEnd(lines, i);
+          
+          functions.push({
+            name: functionName,
+            startLine: i + 1,
+            endLine: endLine + 1,
+            isExported,
+            isAsync,
+            parameters
+          });
+          
+          break; // Found a match, don't check other patterns
+        }
+      }
+    }
+    
+    return functions;
+  }
+  
+  private parseParameters(paramString: string): string[] {
+    if (!paramString.trim()) return [];
+    
+    // Simple parameter parsing - split by comma and clean up
+    return paramString
+      .split(',')
+      .map(param => param.trim().split(':')[0].trim()) // Remove type annotations
+      .filter(param => param.length > 0);
+  }
+  
+  private findFunctionEnd(lines: string[], startLine: number): number {
+    let braceCount = 0;
+    let inFunction = false;
+    
+    for (let i = startLine; i < lines.length; i++) {
+      const line = lines[i];
+      
+      for (const char of line) {
+        if (char === '{') {
+          braceCount++;
+          inFunction = true;
+        } else if (char === '}') {
+          braceCount--;
+          if (inFunction && braceCount === 0) {
+            return i;
+          }
+        }
+      }
+    }
+    
+    // If we can't find the end, assume it goes to the end of the file
+    return lines.length - 1;
   }
 
   topologicalSort(graph: DependencyGraph, reverse: boolean = false): string[] {

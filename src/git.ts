@@ -195,6 +195,40 @@ export class GitService {
     return this.analyzer.buildDependencyGraph(fileContents);
   }
 
+  analyzeModifiedFunctions(files: FileDiff[], graph: DependencyGraph): Map<string, FunctionDefinition[]> {
+    const modifiedFunctions = new Map<string, FunctionDefinition[]>();
+    
+    for (const file of files) {
+      const fileAnalysis = graph.nodes.get(file.filename);
+      if (!fileAnalysis || !fileAnalysis.functions) {
+        continue;
+      }
+      
+      const modifiedInFile: FunctionDefinition[] = [];
+      
+      // Check which functions have changes in their line ranges
+      for (const func of fileAnalysis.functions) {
+        const hasChanges = file.lines.some(line => {
+          if (line.type === 'context' || line.isHunkHeader) return false;
+          
+          // Check if this change line falls within the function's range
+          const changeLineNumber = line.type === 'added' ? line.lineNumber : line.oldLineNumber;
+          return changeLineNumber && changeLineNumber >= func.startLine && changeLineNumber <= func.endLine;
+        });
+        
+        if (hasChanges) {
+          modifiedInFile.push(func);
+        }
+      }
+      
+      if (modifiedInFile.length > 0) {
+        modifiedFunctions.set(file.filename, modifiedInFile);
+      }
+    }
+    
+    return modifiedFunctions;
+  }
+
   async getOrderedFiles(baseBranch: string, compareBranch: string, orderType: 'top-down' | 'bottom-up' | 'alphabetical' = 'alphabetical'): Promise<{files: FileDiff[], graph?: any}> {
     const diff = await this.getDiff(baseBranch, compareBranch);
     
@@ -216,13 +250,20 @@ export class GitService {
         return orderA - orderB;
       });
 
+      // Analyze which functions were modified
+      const modifiedFunctions = this.analyzeModifiedFunctions(sortedFiles, graph);
+      
       // Convert graph to serializable format for client
       const serializedGraph = {
         nodes: Array.from(graph.nodes.entries()).map(([filename, analysis]) => ({
           filename,
           ...analysis
         })),
-        edges: graph.edges
+        edges: graph.edges,
+        modifiedFunctions: Array.from(modifiedFunctions.entries()).map(([filename, functions]) => ({
+          filename,
+          functions
+        }))
       };
       
       return { files: sortedFiles, graph: serializedGraph };

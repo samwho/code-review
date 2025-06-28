@@ -329,15 +329,45 @@ class DiffViewer {
             line: importMatch.line
           });
         }
+        
+        // Check if this symbol is a modified function
+        const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
+        if (functionMatch) {
+          const isModified = this.isFunctionModified(symbolName, node.filename);
+          relations.push({
+            type: 'function_definition',
+            file: node.filename,
+            kind: 'function',
+            line: functionMatch.startLine,
+            isModified: isModified,
+            endLine: functionMatch.endLine,
+            parameters: functionMatch.parameters
+          });
+        }
       }
     }
 
     return relations;
   }
 
+  isFunctionModified(functionName, filename) {
+    if (!this.dependencyGraph || !this.dependencyGraph.modifiedFunctions) {
+      return false;
+    }
+    
+    const modifiedInFile = this.dependencyGraph.modifiedFunctions.find(entry => entry.filename === filename);
+    return modifiedInFile && modifiedInFile.functions.some(func => func.name === functionName);
+  }
+
   makeSymbolInteractive(element, symbolName, relations) {
     element.classList.add('symbol-interactive');
     element.setAttribute('data-symbol', symbolName);
+    
+    // Add special highlighting for modified functions
+    const hasModifiedFunction = relations.some(rel => rel.type === 'function_definition' && rel.isModified);
+    if (hasModifiedFunction) {
+      element.classList.add('symbol-modified');
+    }
     
     // Create tooltip
     const tooltip = document.createElement('div');
@@ -446,6 +476,22 @@ class DiffViewer {
     
     const exported = relations.filter(r => r.type === 'exported_from');
     const imported = relations.filter(r => r.type === 'imported_in');
+    const functions = relations.filter(r => r.type === 'function_definition');
+    
+    // Show function definitions first (most important)
+    if (functions.length > 0) {
+      content += '<div class="relation-section">';
+      content += '<div class="relation-title">🔧 Function definition:</div>';
+      functions.forEach(rel => {
+        const modifiedBadge = rel.isModified ? ' <span class="modified-badge">MODIFIED</span>' : '';
+        const paramText = rel.parameters && rel.parameters.length > 0 ? `(${rel.parameters.join(', ')})` : '()';
+        content += `<div class="relation-item${rel.isModified ? ' modified-function' : ''}" data-file="${rel.file}" data-line="${rel.line}">
+          <span class="file-link">${rel.file}</span>:${rel.line}
+          <div class="function-signature">${symbolName}${paramText}${modifiedBadge}</div>
+        </div>`;
+      });
+      content += '</div>';
+    }
     
     if (exported.length > 0) {
       content += '<div class="relation-section">';

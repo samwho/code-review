@@ -362,6 +362,19 @@ body {
   border-radius: 2px;
 }
 
+/* Modified function highlighting */
+.symbol-modified {
+  text-decoration-color: var(--accent-red) !important;
+  font-weight: 600;
+  background-color: rgba(218, 54, 51, 0.1);
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+.symbol-modified:hover {
+  background-color: rgba(218, 54, 51, 0.2);
+}
+
 .symbol-tooltip {
   display: none;
   background-color: var(--bg-primary);
@@ -422,6 +435,30 @@ body {
   color: var(--text-secondary);
   font-style: italic;
   margin-left: 4px;
+}
+
+/* Modified function tooltip styles */
+.modified-function {
+  border-left: 3px solid var(--accent-red);
+  background-color: rgba(218, 54, 51, 0.05);
+}
+
+.modified-badge {
+  background-color: var(--accent-red);
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 2px;
+  margin-left: 4px;
+  text-transform: uppercase;
+}
+
+.function-signature {
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
 }
 
 /* Navigation highlight animations */
