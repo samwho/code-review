@@ -380,32 +380,52 @@ class DiffViewer {
       return true;
     }
     
-    // If we're showing variables and it's not a standard library symbol, show it
-    if (this.highlightSettings.showVariables) {
-      return true;
+    // If we're in functions-only mode, check if this symbol has function relations
+    if (!this.highlightSettings.showVariables) {
+      // Allow symbols that have function definitions in dependency graph
+      if (this.dependencyGraph && this.dependencyGraph.nodes) {
+        for (const node of this.dependencyGraph.nodes) {
+          const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
+          if (functionMatch) {
+            return true;
+          }
+        }
+      }
+      
+      // Allow symbols that are modified functions
+      if (this.dependencyGraph && this.dependencyGraph.modifiedFunctions) {
+        for (const entry of this.dependencyGraph.modifiedFunctions) {
+          if (entry.functions.some(func => func.name === symbolName)) {
+            return true;
+          }
+        }
+      }
+      
+      return false;
     }
     
-    return false;
+    // If we're showing variables and it's not a standard library symbol, show it
+    return true;
   }
   
   isLikelyFunction(symbolName, element) {
-    // Get the line content around this symbol
-    const lineElement = element.closest('tr');
-    if (!lineElement) return false;
+    // Get the actual code content, not the line numbers
+    const codeCell = element.closest('.line-content');
+    if (!codeCell) return false;
     
-    const lineContent = lineElement.textContent || '';
-    const symbolIndex = lineContent.indexOf(symbolName);
+    const codeContent = codeCell.textContent || '';
+    const symbolIndex = codeContent.indexOf(symbolName);
     
     if (symbolIndex === -1) return false;
     
     // Check for function call pattern: symbolName(
-    const afterSymbol = lineContent.substring(symbolIndex + symbolName.length);
+    const afterSymbol = codeContent.substring(symbolIndex + symbolName.length);
     if (afterSymbol.match(/^\s*\(/)) {
       return true;
     }
     
     // Check for function declaration patterns
-    const beforeSymbol = lineContent.substring(0, symbolIndex);
+    const beforeSymbol = codeContent.substring(0, symbolIndex);
     if (beforeSymbol.match(/function\s+$/) || 
         beforeSymbol.match(/const\s+\w*\s*=\s*(async\s+)?$/) ||
         beforeSymbol.match(/\w+\.\w*\s*=\s*(async\s+)?$/) ||
@@ -416,6 +436,11 @@ class DiffViewer {
     
     // Check for method calls: .symbolName(
     if (beforeSymbol.match(/\.\s*$/) && afterSymbol.match(/^\s*\(/)) {
+      return true;
+    }
+    
+    // Check for arrow function assignments: = symbolName
+    if (beforeSymbol.match(/=\s*$/) && afterSymbol.match(/^\s*=>/)) {
       return true;
     }
     
