@@ -1,17 +1,14 @@
 /**
  * Dependency analyzer for building dependency graphs from TypeScript/JavaScript code
+ * Now uses ts-morph exclusively for all parsing
  */
 
-import { SemanticAnalyzer } from './semantic-analyzer';
-import { APP_CONFIG } from './config';
-import { ImportParser } from './analyzers/import-parser';
-import { ExportParser } from './analyzers/export-parser';
-import { FunctionParser } from './analyzers/function-parser';
-// Removed SymbolExtractor - using semantic analysis instead
+import { TSMorphAnalyzer, type ParsedSymbol } from './ts-morph-analyzer';
 import type {
   ImportDeclaration,
   ExportDeclaration,
   SymbolReference,
+  SymbolContext,
   FunctionDefinition,
   FileAnalysis,
   DependencyEdge,
@@ -30,58 +27,80 @@ export type {
 } from './types/analysis';
 
 export class DependencyAnalyzer {
-  private readonly semanticAnalyzer: SemanticAnalyzer;
-  private readonly importParser: ImportParser;
-  private readonly exportParser: ExportParser;
-  private readonly functionParser: FunctionParser;
+  private readonly tsMorphAnalyzer: TSMorphAnalyzer;
 
   constructor() {
-    this.semanticAnalyzer = new SemanticAnalyzer();
-    this.importParser = new ImportParser();
-    this.exportParser = new ExportParser();
-    this.functionParser = new FunctionParser();
+    this.tsMorphAnalyzer = new TSMorphAnalyzer();
   }
 
   /**
    * Analyzes a single file and extracts all relevant information
+   * This method is now a wrapper around the unified ts-morph analyzer
    */
-  analyzeFile(filename: string, content: string): FileAnalysis {
-    const lines = content.split('\n');
-    const imports: ImportDeclaration[] = [];
-    const exports: ExportDeclaration[] = [];
-    const dependencies: string[] = [];
-
-    // Parse each line for imports and exports only
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      const lineNumber = i + 1;
-
-      // Parse imports
-      const importDeclaration = this.importParser.parse(line, lineNumber);
-      if (importDeclaration) {
-        imports.push(importDeclaration);
-        if (!dependencies.includes(importDeclaration.source)) {
-          dependencies.push(importDeclaration.source);
-        }
-      }
-
-      // Parse exports
-      const exportDeclaration = this.exportParser.parse(line, lineNumber);
-      if (exportDeclaration) {
-        exports.push(exportDeclaration);
-      }
+  async analyzeFile(filename: string, content: string): Promise<FileAnalysis> {
+    // Use the unified ts-morph analyzer
+    const fileMap = new Map([[filename, content]]);
+    const analyses = await this.tsMorphAnalyzer.analyzeFiles(fileMap);
+    const analysis = analyses.get(filename);
+    
+    if (!analysis) {
+      // Fallback if analysis failed
+      return {
+        filename,
+        imports: [],
+        exports: [],
+        symbols: [],
+        dependencies: [],
+        functions: [],
+        semanticSymbols: []
+      };
     }
 
-    // Extract function definitions
-    const functions = this.functionParser.extractFunctions(content);
+    // Convert to legacy format for backward compatibility
+    const legacyImports: ImportDeclaration[] = analysis.imports.map(imp => ({
+      type: 'import' as const,
+      source: imp.source,
+      imports: imp.imports.map(spec => ({
+        name: spec.name,
+        alias: spec.alias,
+        isDefault: spec.isDefault,
+        isNamespace: spec.isNamespace
+      })),
+      line: imp.line
+    }));
+
+    const legacyExports: ExportDeclaration[] = analysis.exports.map(exp => ({
+      type: 'export' as const,
+      name: exp.name,
+      kind: exp.kind,
+      isDefault: exp.isDefault,
+      line: exp.line
+    }));
+
+    const legacyFunctions: FunctionDefinition[] = analysis.functions.map(func => ({
+      name: func.name,
+      startLine: func.startLine,
+      endLine: func.endLine,
+      isExported: func.isExported,
+      isAsync: func.isAsync,
+      parameters: func.parameters
+    }));
+
+    const legacySymbols: SymbolReference[] = analysis.symbols.map(sym => ({
+      name: sym.name,
+      line: sym.line,
+      column: sym.column,
+      context: this.inferSymbolContext(sym)
+    }));
 
     return {
       filename,
-      imports,
-      exports,
-      symbols: [], // Will be populated from semantic analysis
-      dependencies,
-      functions
+      imports: legacyImports,
+      exports: legacyExports,
+      symbols: legacySymbols,
+      dependencies: analysis.dependencies,
+      functions: legacyFunctions,
+      semanticSymbols: analysis.symbols // Store the full semantic symbols
     };
   }
 
@@ -93,21 +112,12 @@ export class DependencyAnalyzer {
     const nodes = new Map<string, FileAnalysis>();
     const edges: DependencyEdge[] = [];
     
-    // Perform semantic analysis on all files
-    const semanticAnalyses = await this.semanticAnalyzer.analyzeFiles(files);
+    // Use the unified ts-morph analyzer for all files at once
+    const tsMorphAnalyses = await this.tsMorphAnalyzer.analyzeFiles(files);
     
-    // Analyze each file
+    // Convert each analysis to the legacy format
     for (const [filename, content] of files) {
-      const analysis = this.analyzeFile(filename, content);
-      
-      // Add semantic information if available
-      const semanticAnalysis = semanticAnalyses.get(filename);
-      if (semanticAnalysis) {
-        analysis.semanticSymbols = semanticAnalysis.symbols;
-        // Convert semantic symbols to legacy SymbolReference format for compatibility
-        analysis.symbols = this.convertSemanticToSymbolReferences(semanticAnalysis.symbols);
-      }
-      
+      const analysis = await this.analyzeFile(filename, content);
       nodes.set(filename, analysis);
     }
     
@@ -272,21 +282,9 @@ export class DependencyAnalyzer {
   }
 
   /**
-   * Converts semantic symbols to legacy SymbolReference format for backward compatibility
-   */
-  private convertSemanticToSymbolReferences(semanticSymbols: import('./semantic-analyzer').SemanticSymbol[]): SymbolReference[] {
-    return semanticSymbols.map(symbol => ({
-      name: symbol.name,
-      line: symbol.line,
-      column: symbol.column,
-      context: this.inferSymbolContext(symbol)
-    }));
-  }
-
-  /**
    * Infers symbol context from semantic information
    */
-  private inferSymbolContext(symbol: import('./semantic-analyzer').SemanticSymbol): SymbolContext {
+  private inferSymbolContext(symbol: ParsedSymbol): SymbolContext {
     if (symbol.isExported) {
       return 'declaration';
     }

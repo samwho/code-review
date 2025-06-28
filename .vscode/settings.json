@@ -1,0 +1,8 @@
+{
+  "typescript.preferences.includeCommentsInReferences": false,
+  "typescript.preferences.includeStringReferences": false,
+  "typescript.referencesCodeLens.enabled": true,
+  "typescript.suggest.includeCompletionsForModuleExports": true,
+  "editor.codeLens": true,
+  "typescript.preferences.renameShorthandProperties": false
+}

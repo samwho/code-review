@@ -8,7 +8,6 @@ class DiffViewer {
     this.loading = document.getElementById('loading');
     this.themeToggle = document.getElementById('theme-toggle');
     this.highlightToggle = document.getElementById('highlight-toggle');
-    this.highlighter = new SyntaxHighlighter();
     
     // Highlighting settings
     this.highlightSettings = {
@@ -221,7 +220,8 @@ class DiffViewer {
     
     // Apply syntax highlighting for TypeScript/JavaScript files
     if (this.isHighlightableLanguage(language)) {
-      contentCell.innerHTML = this.highlighter.highlight(line.content, language);
+      // Use Prism.js for syntax highlighting
+      contentCell.innerHTML = this.highlightWithPrism(line.content, language);
       // Add hover tooltips for symbols if we have dependency graph
       if (this.dependencyGraph) {
         this.addSymbolTooltips(contentCell, filename);
@@ -254,6 +254,34 @@ class DiffViewer {
 
   isHighlightableLanguage(language) {
     return ['typescript', 'javascript', 'ts', 'js'].includes(language.toLowerCase());
+  }
+
+  highlightWithPrism(code, language) {
+    if (!code || typeof code !== 'string') return '';
+    
+    // Map our language names to Prism language names
+    const languageMap = {
+      'typescript': 'typescript',
+      'javascript': 'javascript',
+      'ts': 'typescript',
+      'js': 'javascript'
+    };
+    
+    const prismLanguage = languageMap[language.toLowerCase()] || 'javascript';
+    
+    // Use Prism to highlight the code
+    if (window.Prism && window.Prism.languages[prismLanguage]) {
+      return window.Prism.highlight(code, window.Prism.languages[prismLanguage], prismLanguage);
+    }
+    
+    // Fallback if Prism is not available
+    return this.escapeHtml(code);
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   showLoading(show) {
@@ -349,7 +377,8 @@ class DiffViewer {
     }
     
     // Find all identifier elements in the syntax-highlighted content
-    const identifiers = contentCell.querySelectorAll('.syntax-identifier');
+    // Prism uses different CSS classes than our custom highlighter
+    const identifiers = contentCell.querySelectorAll('.token.function, .token.class-name, .token.property, .token.parameter, .token.variable');
     let highlightedAny = false;
     
     identifiers.forEach(identifier => {
@@ -375,7 +404,8 @@ class DiffViewer {
   
   addSimpleSymbolTooltips(contentCell, currentFile) {
     // Fallback method when semantic analysis is not available
-    const identifiers = contentCell.querySelectorAll('.syntax-identifier');
+    // Use Prism's token classes to find identifiers
+    const identifiers = contentCell.querySelectorAll('.token.function, .token.class-name, .token.property, .token.parameter, .token.variable');
     
     identifiers.forEach(identifier => {
       const symbolName = identifier.textContent.trim();
