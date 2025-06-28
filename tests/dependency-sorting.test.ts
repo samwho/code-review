@@ -232,15 +232,36 @@ export class C {
   expect(alphabetical.symbols!).toHaveLength(3);
   
   const symbolsByFile = new Map(alphabetical.symbols!.map(fs => [fs.filename, fs.symbols]));
-  expect(symbolsByFile.get('src/a.ts')).toEqual([
-    { name: 'A', type: 'class', line: 3, isExported: true }
-  ]);
-  expect(symbolsByFile.get('src/b.ts')).toEqual([
-    { name: 'B', type: 'class', line: 3, isExported: true }
-  ]);
-  expect(symbolsByFile.get('src/c.ts')).toEqual([
-    { name: 'C', type: 'class', line: 1, isExported: true }
-  ]);
+  
+  // Verify class A and its method
+  const aSymbols = symbolsByFile.get('src/a.ts')!;
+  expect(aSymbols).toHaveLength(2);
+  expect(aSymbols.find(s => s.type === 'class')).toEqual({ 
+    name: 'A', type: 'class', line: 3, isExported: true 
+  });
+  expect(aSymbols.find(s => s.type === 'function')).toEqual({ 
+    name: 'doSomething', type: 'function', line: 5, isExported: true, className: 'A' 
+  });
+  
+  // Verify class B and its method
+  const bSymbols = symbolsByFile.get('src/b.ts')!;
+  expect(bSymbols).toHaveLength(2);
+  expect(bSymbols.find(s => s.type === 'class')).toEqual({ 
+    name: 'B', type: 'class', line: 3, isExported: true 
+  });
+  expect(bSymbols.find(s => s.type === 'function')).toEqual({ 
+    name: 'process', type: 'function', line: 5, isExported: true, className: 'B' 
+  });
+  
+  // Verify class C and its method
+  const cSymbols = symbolsByFile.get('src/c.ts')!;
+  expect(cSymbols).toHaveLength(2);
+  expect(cSymbols.find(s => s.type === 'class')).toEqual({ 
+    name: 'C', type: 'class', line: 1, isExported: true 
+  });
+  expect(cSymbols.find(s => s.type === 'function')).toEqual({ 
+    name: 'calculate', type: 'function', line: 2, isExported: true, className: 'C' 
+  });
 });
 
 test('complex dependency graph with branching', async () => {
@@ -754,10 +775,23 @@ export const validateStatus = (status: string): status is Status => {
   const symbolsByFile = new Map(result.symbols!.map(fs => [fs.filename, fs.symbols]));
   
   const typesSymbols = symbolsByFile.get('src/types.ts')!;
-  expect(typesSymbols).toHaveLength(1);
-  expect(typesSymbols[0].name).toBe('DEFAULT_STATUS');
-  expect(typesSymbols[0].type).toBe('export');
-  expect(typesSymbols[0].isExported).toBe(true);
+  expect(typesSymbols).toHaveLength(2); // User interface + DEFAULT_STATUS constant
+  
+  const userInterface = typesSymbols.find(s => s.name === 'User');
+  expect(userInterface).toEqual({
+    name: 'User',
+    type: 'export',
+    line: 1,
+    isExported: true
+  });
+  
+  const defaultStatus = typesSymbols.find(s => s.name === 'DEFAULT_STATUS');
+  expect(defaultStatus).toEqual({
+    name: 'DEFAULT_STATUS',
+    type: 'export',
+    line: 10,
+    isExported: true
+  });
 
   const functionsSymbols = symbolsByFile.get('src/functions.ts')!;
   expect(functionsSymbols).toHaveLength(2);

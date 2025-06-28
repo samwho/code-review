@@ -109,6 +109,33 @@ export class SimpleSymbolExtractor {
               });
             }
           });
+
+          // Extract getters and setters
+          classDecl.getGetAccessors().forEach(getter => {
+            const getterName = getter.getName();
+            if (getterName) {
+              symbols.push({
+                name: getterName,
+                type: 'function',
+                line: getter.getStartLineNumber(),
+                isExported: classDecl.isExported(),
+                className: className
+              });
+            }
+          });
+
+          classDecl.getSetAccessors().forEach(setter => {
+            const setterName = setter.getName();
+            if (setterName) {
+              symbols.push({
+                name: setterName,
+                type: 'function',
+                line: setter.getStartLineNumber(),
+                isExported: classDecl.isExported(),
+                className: className
+              });
+            }
+          });
         }
       });
 
@@ -180,7 +207,9 @@ export class SimpleSymbolExtractor {
       // Extract exports
       sourceFile.getExportDeclarations().forEach(exportDecl => {
         exportDecl.getNamedExports().forEach(namedExport => {
-          const name = namedExport.getName();
+          // Get the alias name if it exists, otherwise use the original name
+          const aliasNode = namedExport.getAliasNode();
+          const name = aliasNode ? aliasNode.getText() : namedExport.getName();
           symbols.push({
             name,
             type: 'export',
