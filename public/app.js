@@ -346,6 +346,10 @@ class DiffViewer {
     
     // Also make sure this is a proper symbolic reference, not inside a string literal
     if (this.isInsideStringLiteral(element)) {
+      // Debug problematic symbols
+      if (symbolName === 'register' || symbolName === 'log') {
+        console.log(`Skipping '${symbolName}' - inside string literal`);
+      }
       return false;
     }
     
@@ -377,22 +381,38 @@ class DiffViewer {
       if (node.semanticSymbols) {
         const semanticSymbol = node.semanticSymbols.find(sym => sym.name === symbolName);
         if (semanticSymbol) {
+          // Debug: log what we found for problematic symbols
+          if (symbolName === 'log' || symbolName === 'console') {
+            console.log(`Found semantic symbol '${symbolName}' in ${node.filename}:`, semanticSymbol);
+          }
           return true;
         }
       }
       
       // Check exports
-      if (node.exports && node.exports.find(exp => exp.name === symbolName)) {
+      const exportMatch = node.exports && node.exports.find(exp => exp.name === symbolName);
+      if (exportMatch) {
+        if (symbolName === 'log' || symbolName === 'console') {
+          console.log(`Found export '${symbolName}' in ${node.filename}:`, exportMatch);
+        }
         return true;
       }
       
       // Check functions
-      if (node.functions && node.functions.find(func => func.name === symbolName)) {
+      const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
+      if (functionMatch) {
+        if (symbolName === 'log' || symbolName === 'console') {
+          console.log(`Found function '${symbolName}' in ${node.filename}:`, functionMatch);
+        }
         return true;
       }
       
       // Check regular symbols (variables, etc.)
-      if (node.symbols && node.symbols.find(sym => sym.name === symbolName)) {
+      const symbolMatch = node.symbols && node.symbols.find(sym => sym.name === symbolName);
+      if (symbolMatch) {
+        if (symbolName === 'log' || symbolName === 'console') {
+          console.log(`Found symbol '${symbolName}' in ${node.filename}:`, symbolMatch);
+        }
         return true;
       }
     }
@@ -406,7 +426,8 @@ class DiffViewer {
     while (current && current !== document) {
       if (current.classList && (
           current.classList.contains('syntax-string') || 
-          current.classList.contains('syntax-template-literal')
+          current.classList.contains('syntax-template-literal') ||
+          current.classList.contains('syntax-comment')
         )) {
         return true;
       }
