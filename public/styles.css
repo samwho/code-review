@@ -549,6 +549,17 @@ body {
   text-transform: uppercase;
 }
 
+.export-badge {
+  background-color: var(--accent-green);
+  color: white;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 2px;
+  margin-left: 4px;
+  text-transform: uppercase;
+}
+
 .function-signature {
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 11px;

@@ -3,29 +3,34 @@
  */
 
 import { spawn } from 'bun';
-import { DependencyAnalyzer } from './dependency-analyzer';
 import { DiffParser } from './parsers/diff-parser';
+import { DependencyAnalyzer } from './dependency-analyzer';
+import { SimpleSymbolExtractor, type FileSymbols } from './simple-symbol-extractor';
 import { APP_CONFIG } from './config';
 import { isSupportedSourceFile } from './utils/file-utils';
 import type { 
   DiffLine, 
-  FileDiff, 
-  GitDiffResult,
-  SerializedDependencyGraph,
-  ModifiedFunctionEntry
+  FileDiff
 } from './types/git';
-import type { DependencyGraph, FunctionDefinition } from './types/analysis';
+import type { DependencyGraph } from './types/analysis';
 
 // Re-export types for backward compatibility
 export type { DiffLine, FileDiff } from './types/git';
 
+export interface SimplifiedDiffResult {
+  files: FileDiff[];
+  symbols?: FileSymbols[];
+}
+
 export class GitService {
+  private readonly symbolExtractor: SimpleSymbolExtractor;
   private readonly dependencyAnalyzer: DependencyAnalyzer;
   private readonly diffParser: DiffParser;
   private readonly repoPath: string;
   
   constructor(repoPath?: string) {
     this.repoPath = repoPath || APP_CONFIG.DEFAULT_REPO_PATH;
+    this.symbolExtractor = new SimpleSymbolExtractor(this.repoPath);
     this.dependencyAnalyzer = new DependencyAnalyzer();
     this.diffParser = new DiffParser();
   }
@@ -93,10 +98,79 @@ export class GitService {
     return output;
   }
 
+
   /**
-   * Analyzes dependencies for all files in a branch
+   * Gets diff files with simple symbol extraction from changed files only
    */
-  async analyzeDependencies(branch: string): Promise<DependencyGraph> {
+  async getOrderedFiles(
+    baseBranch: string, 
+    compareBranch: string, 
+    orderType: 'top-down' | 'bottom-up' | 'alphabetical' = 'alphabetical'
+  ): Promise<SimplifiedDiffResult> {
+    const diff = await this.getDiff(baseBranch, compareBranch);
+    
+    let sortedFiles: FileDiff[];
+    if (orderType === 'alphabetical') {
+      sortedFiles = this.sortFilesAlphabetically(diff);
+    } else {
+      // Use dependency analysis for ordering but don't expose the full graph
+      sortedFiles = await this.sortFilesByDependencies(diff, compareBranch, orderType);
+    }
+    
+    // Extract symbols only from the changed files
+    const symbols = await this.symbolExtractor.extractFromChangedFiles(sortedFiles, compareBranch);
+    
+    return { 
+      files: sortedFiles,
+      symbols 
+    };
+  }
+
+  /**
+   * Sorts files alphabetically by filename
+   */
+  private sortFilesAlphabetically(files: FileDiff[]): FileDiff[] {
+    return files.sort((a, b) => a.filename.localeCompare(b.filename));
+  }
+
+  /**
+   * Sorts files based on dependency order (for ordering only, doesn't expose full graph)
+   */
+  private async sortFilesByDependencies(
+    diff: FileDiff[],
+    compareBranch: string,
+    orderType: 'top-down' | 'bottom-up'
+  ): Promise<FileDiff[]> {
+    try {
+      // Build dependency graph just for ordering
+      const graph = await this.analyzeDependencies(compareBranch);
+      
+      const orderedFilenames = this.dependencyAnalyzer.topologicalSort(
+        graph, 
+        orderType === 'top-down'
+      );
+      
+      const fileOrder = new Map(
+        orderedFilenames.map((file, index) => [file, index])
+      );
+      
+      const sorted = diff.sort((a, b) => {
+        const orderA = fileOrder.get(a.filename) ?? 999999;
+        const orderB = fileOrder.get(b.filename) ?? 999999;
+        return orderA - orderB;
+      });
+      
+      return sorted;
+    } catch (error) {
+      console.warn('Failed to analyze dependencies for ordering, falling back to alphabetical:', error);
+      return this.sortFilesAlphabetically(diff);
+    }
+  }
+
+  /**
+   * Analyzes dependencies for all files in a branch (for ordering only)
+   */
+  private async analyzeDependencies(branch: string): Promise<DependencyGraph> {
     const files = await this.getFilesInBranch(branch);
     const fileContents = await this.loadFileContents(branch, files);
     return await this.dependencyAnalyzer.buildDependencyGraph(fileContents);
@@ -123,163 +197,4 @@ export class GitService {
     return fileContents;
   }
 
-  /**
-   * Analyzes which functions were modified in the given file diffs
-   */
-  analyzeModifiedFunctions(
-    files: FileDiff[], 
-    graph: DependencyGraph
-  ): Map<string, FunctionDefinition[]> {
-    const modifiedFunctions = new Map<string, FunctionDefinition[]>();
-    
-    for (const file of files) {
-      const modifiedInFile = this.findModifiedFunctionsInFile(file, graph);
-      if (modifiedInFile.length > 0) {
-        modifiedFunctions.set(file.filename, modifiedInFile);
-      }
-    }
-    
-    return modifiedFunctions;
-  }
-
-  /**
-   * Finds modified functions in a single file
-   */
-  private findModifiedFunctionsInFile(
-    file: FileDiff, 
-    graph: DependencyGraph
-  ): FunctionDefinition[] {
-    const fileAnalysis = graph.nodes.get(file.filename);
-    if (!fileAnalysis?.functions) {
-      return [];
-    }
-    
-    return fileAnalysis.functions.filter(func => 
-      this.isFunctionModified(func, file.lines)
-    );
-  }
-
-  /**
-   * Checks if a function was modified based on diff lines
-   */
-  private isFunctionModified(
-    func: FunctionDefinition, 
-    lines: DiffLine[]
-  ): boolean {
-    return lines.some(line => {
-      if (line.type === 'context' || line.isHunkHeader) {
-        return false;
-      }
-      
-      const changeLineNumber = line.type === 'added' 
-        ? line.lineNumber 
-        : line.oldLineNumber;
-        
-      return changeLineNumber && 
-             changeLineNumber >= func.startLine && 
-             changeLineNumber <= func.endLine;
-    });
-  }
-
-  /**
-   * Gets diff files ordered according to the specified strategy
-   */
-  async getOrderedFiles(
-    baseBranch: string, 
-    compareBranch: string, 
-    orderType: 'top-down' | 'bottom-up' | 'alphabetical' = 'alphabetical'
-  ): Promise<GitDiffResult> {
-    const diff = await this.getDiff(baseBranch, compareBranch);
-    
-    if (orderType === 'alphabetical') {
-      return { 
-        files: this.sortFilesAlphabetically(diff) 
-      };
-    }
-
-    return await this.getFilesWithDependencyOrder(
-      diff, 
-      compareBranch, 
-      orderType
-    );
-  }
-
-  /**
-   * Sorts files alphabetically by filename
-   */
-  private sortFilesAlphabetically(files: FileDiff[]): FileDiff[] {
-    return files.sort((a, b) => a.filename.localeCompare(b.filename));
-  }
-
-  /**
-   * Gets files ordered by dependency analysis
-   */
-  private async getFilesWithDependencyOrder(
-    diff: FileDiff[],
-    compareBranch: string,
-    orderType: 'top-down' | 'bottom-up'
-  ): Promise<GitDiffResult> {
-    try {
-      const graph = await this.analyzeDependencies(compareBranch);
-      const sortedFiles = this.sortFilesByDependencies(diff, graph, orderType);
-      const modifiedFunctions = this.analyzeModifiedFunctions(sortedFiles, graph);
-      const serializedGraph = this.serializeGraph(graph, modifiedFunctions);
-      
-      return { 
-        files: sortedFiles, 
-        graph: serializedGraph 
-      };
-    } catch (error) {
-      console.warn('Failed to analyze dependencies, falling back to alphabetical order:', error);
-      return { 
-        files: this.sortFilesAlphabetically(diff) 
-      };
-    }
-  }
-
-  /**
-   * Sorts files based on dependency order
-   */
-  private sortFilesByDependencies(
-    files: FileDiff[],
-    graph: DependencyGraph,
-    orderType: 'top-down' | 'bottom-up'
-  ): FileDiff[] {
-    const orderedFilenames = this.dependencyAnalyzer.topologicalSort(
-      graph, 
-      orderType === 'top-down'
-    );
-    
-    const fileOrder = new Map(
-      orderedFilenames.map((file, index) => [file, index])
-    );
-    
-    return files.sort((a, b) => {
-      const orderA = fileOrder.get(a.filename) ?? 999999;
-      const orderB = fileOrder.get(b.filename) ?? 999999;
-      return orderA - orderB;
-    });
-  }
-
-  /**
-   * Converts graph to serializable format for client
-   */
-  private serializeGraph(
-    graph: DependencyGraph,
-    modifiedFunctions: Map<string, FunctionDefinition[]>
-  ): SerializedDependencyGraph {
-    return {
-      nodes: Array.from(graph.nodes.entries()).map(([filename, analysis]) => ({
-        filename,
-        ...analysis
-      })),
-      edges: graph.edges,
-      modifiedFunctions: Array.from(modifiedFunctions.entries()).map(
-        ([filename, functions]): ModifiedFunctionEntry => ({
-          filename,
-          functions
-        })
-      )
-    };
-  }
 }

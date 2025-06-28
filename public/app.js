@@ -82,9 +82,7 @@ class DiffViewer {
       }
       
       const result = await response.json();
-      const files = result.files || result; // Handle both old and new format
-      const graph = result.graph;
-      this.renderDiff(files, order, graph);
+      this.renderDiff(result, order);
     } catch (error) {
       this.showError('Failed to load diff: ' + error.message);
     } finally {
@@ -92,14 +90,17 @@ class DiffViewer {
     }
   }
 
-  renderDiff(files, order = 'alphabetical', graph = null) {
+  renderDiff(diffResult, order = 'alphabetical') {
+    const files = diffResult.files || diffResult; // Handle both old and new format
+    const symbols = diffResult.symbols || [];
+    
     if (files.length === 0) {
       this.diffContainer.innerHTML = '<div class="empty-state">No differences found between the selected branches.</div>';
       return;
     }
 
-    // Store graph and files for symbol relationship lookups
-    this.dependencyGraph = graph;
+    // Store symbols and files for symbol lookups
+    this.fileSymbols = symbols;
     this.currentDiffFiles = files;
     this.currentOrder = order;
 
@@ -222,8 +223,8 @@ class DiffViewer {
     if (this.isHighlightableLanguage(language)) {
       // Use Prism.js for syntax highlighting
       contentCell.innerHTML = this.highlightWithPrism(line.content, language);
-      // Add hover tooltips for symbols if we have dependency graph
-      if (this.dependencyGraph) {
+      // Add hover tooltips for symbols if we have symbol data
+      if (this.fileSymbols && this.fileSymbols.length > 0) {
         this.addSymbolTooltips(contentCell, filename);
       }
     } else {
@@ -352,7 +353,10 @@ class DiffViewer {
     // Re-render the current diff to apply new highlighting
     if (this.currentDiffFiles) {
       this.diffContainer.innerHTML = '';
-      this.renderDiff(this.currentDiffFiles, this.currentOrder || 'alphabetical', this.dependencyGraph);
+      this.renderDiff({ 
+        files: this.currentDiffFiles, 
+        symbols: this.fileSymbols 
+      }, this.currentOrder || 'alphabetical');
     }
   }
 
@@ -370,12 +374,23 @@ class DiffViewer {
       const symbolName = identifier.textContent.trim();
       if (symbolName && symbolName.length > 2) {
         console.log(`Checking symbol: ${symbolName}`);
-        const relations = this.findSymbolRelations(symbolName, currentFile);
-        const usageInPR = this.findUsageInPR(symbolName, currentFile);
         
-        console.log(`Symbol ${symbolName}: ${relations.length} relations, ${usageInPR.length} usages`);
+        // Check if this symbol is defined in any of the changed files
+        const symbolInfo = this.findSymbolInChangedFiles(symbolName);
         
-        if (relations.length > 0 || usageInPR.length > 0) {
+        if (symbolInfo) {
+          console.log(`Found symbol ${symbolName} defined in ${symbolInfo.filename}`);
+          const usageInPR = this.findUsageInPR(symbolName, currentFile);
+          
+          // Create a simple relations array with just the definition
+          const relations = [{
+            type: 'defined_in',
+            file: symbolInfo.filename,
+            line: symbolInfo.line,
+            symbolType: symbolInfo.type,
+            isExported: symbolInfo.isExported
+          }];
+          
           console.log(`Making ${symbolName} interactive`);
           this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
         }
@@ -383,115 +398,28 @@ class DiffViewer {
     });
   }
 
-  shouldHighlightSemanticSymbol(semanticSymbol) {
-    // Skip very short symbols
-    if (semanticSymbol.name.length < 3) {
-      return false;
-    }
-    
-    // If it's a function, always show it
-    if (semanticSymbol.isFunction) {
-      return true;
-    }
-    
-    // If we're in functions-only mode, don't show non-functions
-    if (!this.highlightSettings.showVariables) {
-      return false;
-    }
-    
-    // Show variables and other symbols when not in functions-only mode
-    return true;
-  }
-
   /**
-   * Gets semantic symbols for a specific file and line number
+   * Find symbol definition in the changed files
    */
-  getSemanticSymbolsForLine(filename, lineNumber) {
-    if (!this.dependencyGraph || !this.dependencyGraph.nodes) {
-      return [];
+  findSymbolInChangedFiles(symbolName) {
+    if (!this.fileSymbols) {
+      return null;
     }
     
-    const fileNode = this.dependencyGraph.nodes.get(filename);
-    if (!fileNode || !fileNode.semanticSymbols) {
-      return [];
-    }
-    
-    // Return symbols that are on this line
-    return fileNode.semanticSymbols.filter(symbol => symbol.line === lineNumber);
-  }
-  
-  /**
-   * Finds the semantic symbol that corresponds to a DOM element at a specific position
-   */
-  findSemanticSymbolAtPosition(semanticSymbols, symbolName, element, contentCell) {
-    // Calculate the approximate column position of this element within the line
-    const elementText = element.textContent;
-    const cellText = contentCell.textContent;
-    const elementIndex = cellText.indexOf(elementText);
-    
-    if (elementIndex === -1) return null;
-    
-    // Find the semantic symbol with matching name and approximate column
-    return semanticSymbols.find(symbol => 
-      symbol.name === symbolName &&
-      Math.abs(symbol.column - elementIndex) < 5 // Allow some tolerance for position matching
-    );
-  }
-
-
-  findSymbolRelations(symbolName, currentFile) {
-    if (!this.dependencyGraph || !this.dependencyGraph.nodes) {
-      return [];
-    }
-
-    const relations = [];
-    
-    // Find where this symbol is exported from
-    for (const node of this.dependencyGraph.nodes) {
-      if (node.filename !== currentFile) {
-        // Check exports
-        const exportMatch = node.exports.find(exp => exp.name === symbolName);
-        if (exportMatch) {
-          relations.push({
-            type: 'exported_from',
-            file: node.filename,
-            kind: exportMatch.kind,
-            line: exportMatch.line
-          });
-        }
-        
-        // Check imports
-        const importMatch = node.imports.find(imp => 
-          imp.imports.some(i => i.name === symbolName || i.alias === symbolName)
-        );
-        if (importMatch) {
-          relations.push({
-            type: 'imported_in',
-            file: node.filename,
-            source: importMatch.source,
-            line: importMatch.line
-          });
-        }
-        
-        // Check if this symbol is a modified function
-        const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
-        if (functionMatch) {
-          const isModified = this.isFunctionModified(symbolName, node.filename);
-          relations.push({
-            type: 'function_definition',
-            file: node.filename,
-            kind: 'function',
-            line: functionMatch.startLine,
-            isModified: isModified,
-            endLine: functionMatch.endLine,
-            parameters: functionMatch.parameters
-          });
-        }
+    for (const fileSymbols of this.fileSymbols) {
+      const symbol = fileSymbols.symbols.find(s => s.name === symbolName);
+      if (symbol) {
+        return {
+          filename: fileSymbols.filename,
+          ...symbol
+        };
       }
     }
-
-    return relations;
+    
+    return null;
   }
+
+
 
   findUsageInPR(symbolName, currentFile) {
     if (!this.currentDiffFiles) {
@@ -560,14 +488,6 @@ class DiffViewer {
     return 'reference';
   }
 
-  isFunctionModified(functionName, filename) {
-    if (!this.dependencyGraph || !this.dependencyGraph.modifiedFunctions) {
-      return false;
-    }
-    
-    const modifiedInFile = this.dependencyGraph.modifiedFunctions.find(entry => entry.filename === filename);
-    return modifiedInFile && modifiedInFile.functions.some(func => func.name === functionName);
-  }
 
   makeSymbolInteractive(element, symbolName, relations, usageInPR = []) {
     element.classList.add('symbol-interactive');
@@ -683,31 +603,27 @@ class DiffViewer {
     let content = `<div class="tooltip-header"><strong>${symbolName}</strong></div>`;
     
     if (relations.length === 0 && usageInPR.length === 0) {
-      return content + '<div class="tooltip-body">No cross-file references found</div>';
+      return content + '<div class="tooltip-body">No references found</div>';
     }
     
     content += '<div class="tooltip-body">';
     
-    const exported = relations.filter(r => r.type === 'exported_from');
-    const imported = relations.filter(r => r.type === 'imported_in');
-    const functions = relations.filter(r => r.type === 'function_definition');
-    
-    // Show function definitions first (most important)
-    if (functions.length > 0) {
+    // Show symbol definition
+    if (relations.length > 0) {
       content += '<div class="relation-section">';
-      content += '<div class="relation-title">🔧 Function definition:</div>';
-      functions.forEach(rel => {
-        const modifiedBadge = rel.isModified ? ' <span class="modified-badge">MODIFIED</span>' : '';
-        const paramText = rel.parameters && rel.parameters.length > 0 ? `(${rel.parameters.join(', ')})` : '()';
-        content += `<div class="relation-item${rel.isModified ? ' modified-function' : ''}" data-file="${rel.file}" data-line="${rel.line}">
-          <span class="file-link">${rel.file}</span>:${rel.line}
-          <div class="function-signature">${symbolName}${paramText}${modifiedBadge}</div>
-        </div>`;
-      });
+      const relation = relations[0]; // We only have one relation type now
+      const symbolIcon = relation.symbolType === 'class' ? '🏛️' : 
+                        relation.symbolType === 'function' ? '🔧' : '📤';
+      const exportBadge = relation.isExported ? ' <span class="export-badge">EXPORTED</span>' : '';
+      
+      content += `<div class="relation-title">${symbolIcon} ${relation.symbolType} defined in:</div>`;
+      content += `<div class="relation-item" data-file="${relation.file}" data-line="${relation.line}">
+        <span class="file-link">${relation.file}</span>:${relation.line}${exportBadge}
+      </div>`;
       content += '</div>';
     }
     
-    // Show usage in current PR (new and important)
+    // Show usage in current PR
     if (usageInPR.length > 0) {
       content += '<div class="relation-section">';
       content += '<div class="relation-title">📍 Used in this PR:</div>';
@@ -718,29 +634,6 @@ class DiffViewer {
           <span class="file-link">${usage.file}</span>:${usage.line} ${contextIcon}
           <div class="usage-context">${usage.context.replace('_', ' ')}</div>
           <div class="usage-preview">${usage.content}</div>
-        </div>`;
-      });
-      content += '</div>';
-    }
-    
-    if (exported.length > 0) {
-      content += '<div class="relation-section">';
-      content += '<div class="relation-title">📤 Exported from:</div>';
-      exported.forEach(rel => {
-        content += `<div class="relation-item" data-file="${rel.file}" data-line="${rel.line}">
-          <span class="file-link">${rel.file}</span>:${rel.line} 
-          <span class="symbol-kind">${rel.kind}</span>
-        </div>`;
-      });
-      content += '</div>';
-    }
-    
-    if (imported.length > 0) {
-      content += '<div class="relation-section">';
-      content += '<div class="relation-title">📥 Used in:</div>';
-      imported.forEach(rel => {
-        content += `<div class="relation-item" data-file="${rel.file}" data-line="${rel.line}">
-          <span class="file-link">${rel.file}</span>:${rel.line}
         </div>`;
       });
       content += '</div>';
