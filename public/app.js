@@ -339,6 +339,11 @@ class DiffViewer {
       return false;
     }
     
+    // CRITICAL FIX: Don't highlight symbols inside comments or strings
+    if (this.isElementInCommentOrString(element)) {
+      return false;
+    }
+    
     // Use semantic analysis to determine if this symbol is actually defined in our codebase
     const symbolInfo = this.getSymbolInfo(symbolName);
     if (!symbolInfo) {
@@ -357,6 +362,28 @@ class DiffViewer {
     
     // If we're showing variables and it's defined in our codebase, show it
     return true;
+  }
+
+  /**
+   * Checks if an element is inside a comment or string literal
+   */
+  isElementInCommentOrString(element) {
+    // Check if the element itself is a comment or string
+    if (element.classList.contains('syntax-comment') || element.classList.contains('syntax-string')) {
+      return true;
+    }
+    
+    // Check if any parent element is a comment or string
+    let parent = element.parentElement;
+    while (parent) {
+      if (parent.classList && 
+          (parent.classList.contains('syntax-comment') || parent.classList.contains('syntax-string'))) {
+        return true;
+      }
+      parent = parent.parentElement;
+    }
+    
+    return false;
   }
 
   getSymbolInfo(symbolName) {
