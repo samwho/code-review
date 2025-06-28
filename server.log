@@ -1,0 +1,5 @@
+$ bun run --watch src/server.ts
+Code Review UI server running at http://0.0.0.0:3000
+Available branches: feature/improvements, master
+error: Module not found "src/server.ts"
+error: script "dev" exited with code 1

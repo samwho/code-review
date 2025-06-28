@@ -372,35 +372,16 @@ class DiffViewer {
       return false;
     }
     
-    // Check if this looks like a function by examining context
-    const isLikelyFunction = this.isLikelyFunction(symbolName, element);
+    // Use semantic analysis if available for accurate symbol classification
+    const isFunction = this.isSymbolFunction(symbolName, element);
     
     // If it's a function, always show it
-    if (isLikelyFunction) {
+    if (isFunction) {
       return true;
     }
     
-    // If we're in functions-only mode, check if this symbol has function relations
+    // If we're in functions-only mode, don't show non-functions
     if (!this.highlightSettings.showVariables) {
-      // Allow symbols that have function definitions in dependency graph
-      if (this.dependencyGraph && this.dependencyGraph.nodes) {
-        for (const node of this.dependencyGraph.nodes) {
-          const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
-          if (functionMatch) {
-            return true;
-          }
-        }
-      }
-      
-      // Allow symbols that are modified functions
-      if (this.dependencyGraph && this.dependencyGraph.modifiedFunctions) {
-        for (const entry of this.dependencyGraph.modifiedFunctions) {
-          if (entry.functions.some(func => func.name === symbolName)) {
-            return true;
-          }
-        }
-      }
-      
       return false;
     }
     
@@ -408,7 +389,31 @@ class DiffViewer {
     return true;
   }
   
-  isLikelyFunction(symbolName, element) {
+  isSymbolFunction(symbolName, element) {
+    // First, check semantic analysis data if available
+    if (this.dependencyGraph && this.dependencyGraph.nodes) {
+      for (const node of this.dependencyGraph.nodes) {
+        // Check semantic symbols first (most accurate)
+        if (node.semanticSymbols) {
+          const semanticSymbol = node.semanticSymbols.find(sym => sym.name === symbolName);
+          if (semanticSymbol) {
+            return semanticSymbol.isFunction;
+          }
+        }
+        
+        // Fallback to function definitions from AST parsing
+        const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
+        if (functionMatch) {
+          return true;
+        }
+      }
+    }
+    
+    // Fallback to context-based detection if semantic data is not available
+    return this.isLikelyFunctionFromContext(symbolName, element);
+  }
+
+  isLikelyFunctionFromContext(symbolName, element) {
     // Get the actual code content, not the line numbers
     const codeCell = element.closest('.line-content');
     if (!codeCell) return false;
@@ -424,34 +429,10 @@ class DiffViewer {
       return true;
     }
     
-    // Check for function declaration patterns
-    const beforeSymbol = codeContent.substring(0, symbolIndex);
-    if (beforeSymbol.match(/function\s+$/) || 
-        beforeSymbol.match(/const\s+\w*\s*=\s*(async\s+)?$/) ||
-        beforeSymbol.match(/\w+\.\w*\s*=\s*(async\s+)?$/) ||
-        beforeSymbol.match(/async\s+$/) ||
-        beforeSymbol.match(/export\s+(async\s+)?function\s+$/)) {
-      return true;
-    }
-    
     // Check for method calls: .symbolName(
+    const beforeSymbol = codeContent.substring(0, symbolIndex);
     if (beforeSymbol.match(/\.\s*$/) && afterSymbol.match(/^\s*\(/)) {
       return true;
-    }
-    
-    // Check for arrow function assignments: = symbolName
-    if (beforeSymbol.match(/=\s*$/) && afterSymbol.match(/^\s*=>/)) {
-      return true;
-    }
-    
-    // Check if it's in our dependency graph as a function
-    if (this.dependencyGraph && this.dependencyGraph.nodes) {
-      for (const node of this.dependencyGraph.nodes) {
-        const functionMatch = node.functions && node.functions.find(func => func.name === symbolName);
-        if (functionMatch) {
-          return true;
-        }
-      }
     }
     
     return false;

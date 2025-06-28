@@ -192,7 +192,7 @@ export class GitService {
       }
     }
 
-    return this.analyzer.buildDependencyGraph(fileContents);
+    return await this.analyzer.buildDependencyGraph(fileContents);
   }
 
   analyzeModifiedFunctions(files: FileDiff[], graph: DependencyGraph): Map<string, FunctionDefinition[]> {

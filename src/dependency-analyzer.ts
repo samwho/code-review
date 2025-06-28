@@ -1,3 +1,5 @@
+import { SemanticAnalyzer } from './semantic-analyzer';
+
 export interface ImportDeclaration {
   type: 'import';
   source: string;
@@ -41,6 +43,7 @@ export interface FileAnalysis {
   symbols: SymbolReference[];
   dependencies: string[];
   functions: FunctionDefinition[];
+  semanticSymbols?: import('./semantic-analyzer').SemanticSymbol[];
 }
 
 export interface DependencyEdge {
@@ -57,6 +60,7 @@ export interface DependencyGraph {
 }
 
 export class DependencyAnalyzer {
+  private semanticAnalyzer: SemanticAnalyzer;
   private keywords = new Set([
     'abstract', 'any', 'as', 'async', 'await', 'boolean', 'break', 'case', 'catch', 'class',
     'const', 'constructor', 'continue', 'debugger', 'declare', 'default', 'delete', 'do',
@@ -67,6 +71,10 @@ export class DependencyAnalyzer {
     'string', 'super', 'switch', 'symbol', 'this', 'throw', 'true', 'try', 'type',
     'typeof', 'undefined', 'union', 'unknown', 'var', 'void', 'while', 'with', 'yield'
   ]);
+
+  constructor() {
+    this.semanticAnalyzer = new SemanticAnalyzer();
+  }
 
   analyzeFile(filename: string, content: string): FileAnalysis {
     const lines = content.split('\n');
@@ -334,13 +342,23 @@ export class DependencyAnalyzer {
     return 'usage';
   }
 
-  buildDependencyGraph(files: Map<string, string>): DependencyGraph {
+  async buildDependencyGraph(files: Map<string, string>): Promise<DependencyGraph> {
     const nodes = new Map<string, FileAnalysis>();
     const edges: DependencyEdge[] = [];
+    
+    // Perform semantic analysis on all files
+    const semanticAnalyses = await this.semanticAnalyzer.analyzeFiles(files);
     
     // Analyze each file
     for (const [filename, content] of files) {
       const analysis = this.analyzeFile(filename, content);
+      
+      // Add semantic information if available
+      const semanticAnalysis = semanticAnalyses.get(filename);
+      if (semanticAnalysis) {
+        analysis.semanticSymbols = semanticAnalysis.symbols;
+      }
+      
       nodes.set(filename, analysis);
     }
     
