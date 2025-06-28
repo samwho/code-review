@@ -295,19 +295,14 @@ class DiffViewer {
       // Start with the raw code
       let highlighted = code;
       
-      // First, escape HTML characters
-      highlighted = highlighted.replace(/&/g, '&amp;')
-                              .replace(/</g, '&lt;')
-                              .replace(/>/g, '&gt;');
-      
-      // Comments (to avoid keyword highlighting inside comments)
+      // Comments first (to avoid keyword highlighting inside comments)
       highlighted = highlighted.replace(/(\/\/.*$)/gm, 
         '<span class="token comment">$1</span>');
       highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, 
         '<span class="token comment">$1</span>');
       
       // Strings (to avoid keyword highlighting inside strings)
-      highlighted = highlighted.replace(/([&#39;&#34;`])((?:\\.|(?!\1)[^\\])*?)\1/g, 
+      highlighted = highlighted.replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, 
         '<span class="token string">$1$2$1</span>');
       
       // Keywords (avoid those already in spans)
@@ -317,6 +312,40 @@ class DiffViewer {
       // Function names (simple detection, avoid those already in spans)
       highlighted = highlighted.replace(/(?!<[^>]*>)\b([a-zA-Z_$][a-zA-Z0-9_$]*)\s*\((?![^<]*<\/span>)/g, 
         '<span class="token function">$1</span>(');
+      
+      // Now escape HTML characters while preserving our highlighting spans
+      // First, temporarily replace our span tags with placeholders
+      const spanOpenPattern = /<span class="token [^"]*">/g;
+      const spanClosePattern = /<\/span>/g;
+      
+      const spanOpens = [];
+      const spanCloses = [];
+      
+      highlighted = highlighted.replace(spanOpenPattern, function(match) {
+        const index = spanOpens.length;
+        spanOpens.push(match);
+        return `__SPAN_OPEN_${index}__`;
+      });
+      
+      highlighted = highlighted.replace(spanClosePattern, function(match) {
+        const index = spanCloses.length;
+        spanCloses.push(match);
+        return `__SPAN_CLOSE_${index}__`;
+      });
+      
+      // Now escape HTML characters
+      highlighted = highlighted.replace(/&/g, '&amp;')
+                              .replace(/</g, '&lt;')
+                              .replace(/>/g, '&gt;');
+      
+      // Restore span tags
+      highlighted = highlighted.replace(/__SPAN_OPEN_(\d+)__/g, function(match, index) {
+        return spanOpens[parseInt(index)];
+      });
+      
+      highlighted = highlighted.replace(/__SPAN_CLOSE_(\d+)__/g, function(match, index) {
+        return spanCloses[parseInt(index)];
+      });
       
       return highlighted;
     }
