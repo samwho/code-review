@@ -357,92 +357,27 @@ class DiffViewer {
   }
 
   addSymbolTooltips(contentCell, currentFile) {
-    // Try semantic analysis first, fall back to simple approach if needed
-    if (this.trySemanticSymbolTooltips(contentCell, currentFile)) {
-      return;
-    }
-    // Fallback to simple method
-    this.addSimpleSymbolTooltips(contentCell, currentFile);
+    // Use only semantic analysis for symbol tooltips
+    this.addSemanticSymbolTooltips(contentCell, currentFile);
   }
   
-  trySemanticSymbolTooltips(contentCell, currentFile) {
-    // Get the line number for this content cell
-    const row = contentCell.closest('tr');
-    if (!row) {
-      return false; // Can't get line number, fall back
-    }
-    
-    const lineNumberCell = row.querySelector('.new-line-number, .old-line-number');
-    if (!lineNumberCell || !lineNumberCell.textContent) {
-      return false; // No line number found, fall back
-    }
-    
-    const lineNumber = parseInt(lineNumberCell.textContent.trim());
-    if (isNaN(lineNumber)) {
-      return false; // Invalid line number, fall back
-    }
-    
-    // Get semantic symbols for this file and line
-    const semanticSymbols = this.getSemanticSymbolsForLine(currentFile, lineNumber);
-    if (semanticSymbols.length === 0) {
-      return false; // No semantic symbols found, fall back
-    }
-    
+  addSemanticSymbolTooltips(contentCell, currentFile) {
     // Find all identifier elements in the syntax-highlighted content
-    // Prism uses different CSS classes than our custom highlighter
     const identifiers = contentCell.querySelectorAll('.token.function, .token.class-name, .token.property, .token.parameter, .token.variable');
-    let highlightedAny = false;
-    
-    identifiers.forEach(identifier => {
-      const symbolName = identifier.textContent.trim();
-      if (symbolName && symbolName.length > 1) {
-        // Check if this identifier corresponds to a semantic symbol
-        const semanticSymbol = this.findSemanticSymbolAtPosition(semanticSymbols, symbolName, identifier, contentCell);
-        
-        if (semanticSymbol && this.shouldHighlightSemanticSymbol(semanticSymbol)) {
-          const relations = this.findSymbolRelations(symbolName, currentFile);
-          const usageInPR = this.findUsageInPR(symbolName, currentFile);
-          
-          if (relations.length > 0 || usageInPR.length > 0) {
-            this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
-            highlightedAny = true;
-          }
-        }
-      }
-    });
-    
-    return highlightedAny;
-  }
-  
-  addSimpleSymbolTooltips(contentCell, currentFile) {
-    // Fallback method when semantic analysis is not available
-    // Use Prism's token classes to find identifiers
-    const identifiers = contentCell.querySelectorAll('.token.function, .token.class-name, .token.property, .token.parameter, .token.variable');
+    console.log(`Found ${identifiers.length} identifiers in`, currentFile);
     
     identifiers.forEach(identifier => {
       const symbolName = identifier.textContent.trim();
       if (symbolName && symbolName.length > 2) {
-        // Use the legacy symbol detection method
-        const symbolInfo = this.getSymbolInfo(symbolName);
-        if (symbolInfo) {
-          // If it's a function, always show it
-          if (symbolInfo.isFunction) {
-            const relations = this.findSymbolRelations(symbolName, currentFile);
-            const usageInPR = this.findUsageInPR(symbolName, currentFile);
-            
-            if (relations.length > 0 || usageInPR.length > 0) {
-              this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
-            }
-          }
-          // If we're showing variables and it's defined in our codebase, show it
-          else if (this.highlightSettings.showVariables) {
-            const relations = this.findSymbolRelations(symbolName, currentFile);
-            const usageInPR = this.findUsageInPR(symbolName, currentFile);
-            
-            if (relations.length > 0 || usageInPR.length > 0) {
-              this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
-            }
-          }
+        console.log(`Checking symbol: ${symbolName}`);
+        const relations = this.findSymbolRelations(symbolName, currentFile);
+        const usageInPR = this.findUsageInPR(symbolName, currentFile);
+        
+        console.log(`Symbol ${symbolName}: ${relations.length} relations, ${usageInPR.length} usages`);
+        
+        if (relations.length > 0 || usageInPR.length > 0) {
+          console.log(`Making ${symbolName} interactive`);
+          this.makeSymbolInteractive(identifier, symbolName, relations, usageInPR);
         }
       }
     });
@@ -503,119 +438,6 @@ class DiffViewer {
     );
   }
 
-  getSymbolInfo(symbolName) {
-    if (!this.dependencyGraph || !this.dependencyGraph.nodes) {
-      return null;
-    }
-
-    // Filter out common built-in JavaScript/browser symbols
-    const builtInSymbols = new Set([
-      'console', 'log', 'error', 'warn', 'info', 'debug', 'trace',
-      'window', 'document', 'global', 'process', 'Buffer',
-      'setTimeout', 'setInterval', 'clearTimeout', 'clearInterval',
-      'fetch', 'Response', 'Request', 'URL', 'URLSearchParams',
-      'Object', 'Array', 'String', 'Number', 'Boolean', 'Symbol', 'BigInt',
-      'Function', 'Date', 'RegExp', 'Error', 'TypeError', 'ReferenceError',
-      'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise', 'Proxy', 'Reflect',
-      'toString', 'valueOf', 'hasOwnProperty', 'isPrototypeOf',
-      'propertyIsEnumerable', 'toLocaleString', 'constructor',
-      'length', 'prototype', 'name', 'message',
-      'exports', 'module', 'require', '__dirname', '__filename',
-      'JSON', 'Math', 'Infinity', 'NaN', 'undefined', 'null'
-    ]);
-    
-    if (builtInSymbols.has(symbolName)) {
-      return null;
-    }
-
-    // Look for the symbol in our semantic analysis data
-    for (const node of this.dependencyGraph.nodes) {
-      // Check semantic symbols first (most reliable)
-      if (node.semanticSymbols) {
-        const semanticSymbol = node.semanticSymbols.find(sym => sym.name === symbolName);
-        if (semanticSymbol) {
-          return {
-            name: symbolName,
-            isFunction: semanticSymbol.isFunction,
-            file: node.filename,
-            line: semanticSymbol.line,
-            type: 'semantic'
-          };
-        }
-      }
-      
-      // Check exports
-      if (node.exports) {
-        const exportMatch = node.exports.find(exp => exp.name === symbolName);
-        if (exportMatch) {
-          return {
-            name: symbolName,
-            isFunction: exportMatch.kind === 'function',
-            file: node.filename,
-            line: exportMatch.line,
-            type: 'export'
-          };
-        }
-      }
-      
-      // Check functions
-      if (node.functions) {
-        const functionMatch = node.functions.find(func => func.name === symbolName);
-        if (functionMatch) {
-          return {
-            name: symbolName,
-            isFunction: true,
-            file: node.filename,
-            line: functionMatch.startLine,
-            type: 'function'
-          };
-        }
-      }
-      
-      // Check variables/symbols
-      if (node.symbols) {
-        const symbolMatch = node.symbols.find(sym => sym.name === symbolName);
-        if (symbolMatch) {
-          return {
-            name: symbolName,
-            isFunction: false,
-            file: node.filename,
-            line: symbolMatch.line,
-            type: 'variable'
-          };
-        }
-      }
-    }
-    
-    return null;
-  }
-
-
-
-  isLikelyFunctionFromContext(symbolName, element) {
-    // Get the actual code content, not the line numbers
-    const codeCell = element.closest('.line-content');
-    if (!codeCell) return false;
-    
-    const codeContent = codeCell.textContent || '';
-    const symbolIndex = codeContent.indexOf(symbolName);
-    
-    if (symbolIndex === -1) return false;
-    
-    // Check for function call pattern: symbolName(
-    const afterSymbol = codeContent.substring(symbolIndex + symbolName.length);
-    if (afterSymbol.match(/^\s*\(/)) {
-      return true;
-    }
-    
-    // Check for method calls: .symbolName(
-    const beforeSymbol = codeContent.substring(0, symbolIndex);
-    if (beforeSymbol.match(/\.\s*$/) && afterSymbol.match(/^\s*\(/)) {
-      return true;
-    }
-    
-    return false;
-  }
 
   findSymbolRelations(symbolName, currentFile) {
     if (!this.dependencyGraph || !this.dependencyGraph.nodes) {
