@@ -378,6 +378,57 @@ body {
   color: var(--syntax-identifier);
 }
 
+/* Prism.js token styling overrides */
+.token.punctuation {
+  color: var(--syntax-punctuation) !important;
+  background: none !important;
+  background-color: transparent !important;
+}
+
+.token.operator {
+  color: var(--syntax-operator) !important;
+  background: none !important;
+  background-color: transparent !important;
+}
+
+.token.keyword {
+  color: var(--syntax-keyword) !important;
+  font-weight: 600;
+}
+
+.token.string {
+  color: var(--syntax-string) !important;
+}
+
+.token.number {
+  color: var(--syntax-number) !important;
+}
+
+.token.comment {
+  color: var(--syntax-comment) !important;
+  font-style: italic;
+}
+
+.token.function {
+  color: var(--syntax-identifier) !important;
+}
+
+.token.class-name {
+  color: var(--syntax-identifier) !important;
+}
+
+.token.property {
+  color: var(--syntax-identifier) !important;
+}
+
+.token.parameter {
+  color: var(--syntax-identifier) !important;
+}
+
+.token.variable {
+  color: var(--syntax-identifier) !important;
+}
+
 /* Symbol tooltip styles */
 .symbol-interactive {
   cursor: pointer;
