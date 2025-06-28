@@ -397,30 +397,39 @@ class DiffViewer {
         // Find references to this symbol in other changed files
         const references = this.findSymbolReferences(text, currentFile);
         
-        // Create relations array with definition and references
-        const relations = [];
-        
-        // Add the definition
-        relations.push({
-          type: 'defined_in',
-          file: symbolInfo.filename,
-          line: symbolInfo.line,
-          symbolType: symbolInfo.type,
-          isExported: symbolInfo.isExported,
-          className: symbolInfo.className
-        });
-
-        // Add references from other files
-        references.forEach(ref => {
+        // Only make symbol interactive if it has references in the PR
+        // Skip symbols that are only defined but never used
+        if (references.length > 0) {
+          // Create relations array with definition and references
+          const relations = [];
+          
+          // Add the definition
           relations.push({
-            type: 'used_in',
-            file: ref.file,
-            line: ref.line,
-            context: ref.context
+            type: 'defined_in',
+            file: symbolInfo.filename,
+            line: symbolInfo.line,
+            symbolType: symbolInfo.type,
+            isExported: symbolInfo.isExported,
+            className: symbolInfo.className
           });
-        });
-        
-        this.makeSymbolInteractive(token, text, relations, []);
+
+          // Add references from other files, excluding the definition itself
+          references.forEach(ref => {
+            // Skip if this reference is actually the definition location
+            if (ref.file === symbolInfo.filename && ref.line === symbolInfo.line) {
+              return;
+            }
+            
+            relations.push({
+              type: 'used_in',
+              file: ref.file,
+              line: ref.line,
+              context: ref.context
+            });
+          });
+          
+          this.makeSymbolInteractive(token, text, relations, []);
+        }
       }
     });
   }
