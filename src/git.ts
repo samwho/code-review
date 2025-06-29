@@ -122,8 +122,11 @@ export class GitService {
     orderType: 'top-down' | 'bottom-up'
   ): Promise<FileDiff[]> {
     try {
-      // Build dependency graph just for ordering
-      const graph = await this.analyzeDependencies(compareBranch);
+      // Extract changed filenames for smart loading
+      const changedFilenames = diff.map(d => d.filename);
+      
+      // Build dependency graph with smart loading
+      const graph = await this.analyzeDependencies(compareBranch, changedFilenames);
       
       const orderedFilenames = this.dependencyAnalyzer.topologicalSort(
         graph, 
@@ -148,16 +151,49 @@ export class GitService {
   }
 
   /**
-   * Analyzes dependencies for all files in a branch (for ordering only)
+   * Analyzes dependencies for relevant files only (smart loading)
    */
-  private async analyzeDependencies(branch: string): Promise<DependencyGraph> {
-    const files = await this.getFilesInBranch(branch);
+  private async analyzeDependencies(branch: string, changedFiles?: string[]): Promise<DependencyGraph> {
+    let files: string[];
+    
+    if (changedFiles && changedFiles.length > 0) {
+      // Smart loading: get all files but prioritize changed files and their likely dependencies
+      const allFiles = await this.getFilesInBranch(branch);
+      
+      // Start with changed files
+      const relevantFiles = new Set(changedFiles);
+      
+      // Add files that might be imported by changed files (heuristic approach)
+      for (const changedFile of changedFiles) {
+        const dir = changedFile.substring(0, changedFile.lastIndexOf('/'));
+        
+        // Add files in the same directory and common dependency patterns
+        for (const file of allFiles) {
+          if (
+            file.startsWith(dir) || // Same directory
+            file.includes('/models/') || // Common models
+            file.includes('/types/') || // Type definitions
+            file.includes('/utils/') || // Utilities
+            file.includes('/services/') // Services
+          ) {
+            relevantFiles.add(file);
+          }
+        }
+      }
+      
+      files = Array.from(relevantFiles);
+      console.log(`Smart loading: reduced from ${allFiles.length} to ${files.length} files`);
+    } else {
+      // Fallback to loading all files
+      files = await this.getFilesInBranch(branch);
+    }
+    
     const fileContents = await this.loadFileContents(branch, files);
     return await this.dependencyAnalyzer.buildDependencyGraph(fileContents);
   }
 
   /**
-   * Loads contents for multiple files from a branch
+   * Loads contents for multiple files from a branch in parallel
    */
   private async loadFileContents(
     branch: string, 
@@ -165,12 +201,23 @@ export class GitService {
   ): Promise<Map<string, string>> {
     const fileContents = new Map<string, string>();
 
-    for (const file of files) {
+    // Load files in parallel instead of sequentially
+    const filePromises = files.map(async (file) => {
       try {
         const content = await this.getFileContents(branch, file);
-        fileContents.set(file, content);
+        return { file, content, success: true };
       } catch (error) {
         console.warn(`Could not read file ${file}:`, error);
+        return { file, content: '', success: false };
+      }
+    });
+
+    const results = await Promise.all(filePromises);
+    
+    // Only add successfully loaded files to the map
+    for (const result of results) {
+      if (result.success) {
+        fileContents.set(result.file, result.content);
       }
     }
 
