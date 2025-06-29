@@ -21,7 +21,7 @@ export class StaticRoutes {
         return new Response('File not found', { status: 404 });
       }
 
-      const contentType = getContentTypeForExtension(pathname);
+      const contentType = getContentTypeForExtension(resolvedPathname);
       return new Response(file, {
         headers: {
           'Content-Type': contentType,
