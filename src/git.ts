@@ -7,6 +7,7 @@ import type { SimpleGit } from 'simple-git';
 import { DiffParser } from './parsers/diff-parser';
 import { DependencyAnalyzer } from './dependency-analyzer';
 import { OxcSymbolExtractor, type OxcFileSymbols } from './oxc-symbol-extractor';
+import { lineContainsSymbolPrecise } from './utils/oxc-line-analyzer';
 import { APP_CONFIG } from './config';
 import { isSupportedSourceFile } from './utils/file-utils';
 import type { 
@@ -333,14 +334,8 @@ export class GitService {
    * Detect if a line contains a symbol (simple implementation)
    */
   private lineContainsSymbol(lineContent: string, symbolName: string): boolean {
-    // Skip comments and strings (basic detection)
-    if (lineContent.trim().startsWith('//') || lineContent.trim().startsWith('*')) {
-      return false;
-    }
-    
-    // Look for symbol as whole word, not part of another identifier
-    const regex = new RegExp(`\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
-    return regex.test(lineContent);
+    // Use OXC-based precise symbol detection to avoid false positives in strings/comments
+    return lineContainsSymbolPrecise(lineContent, symbolName);
   }
 
   /**
