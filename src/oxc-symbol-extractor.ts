@@ -144,6 +144,21 @@ export class OxcSymbolExtractor {
   }
 
   /**
+   * Convert byte position to line number
+   */
+  private getLineNumber(content: string, bytePosition: number): number {
+    if (bytePosition === undefined || bytePosition < 0) return 1;
+    
+    let line = 1;
+    for (let i = 0; i < bytePosition && i < content.length; i++) {
+      if (content[i] === '\n') {
+        line++;
+      }
+    }
+    return line;
+  }
+
+  /**
    * Extract symbols from file content using OXC parser
    */
   private extractSymbolsFromContent(content: string, filename: string): OxcSymbol[] {
@@ -158,7 +173,7 @@ export class OxcSymbolExtractor {
         switch (node.type) {
           case 'ExportNamedDeclaration':
             if (node.declaration) {
-              this.extractFromDeclaration(node.declaration, symbols, true);
+              this.extractFromDeclaration(node.declaration, symbols, true, content);
             }
             // Handle re-exports (export { name } from 'module')
             if (node.specifiers) {
@@ -167,7 +182,7 @@ export class OxcSymbolExtractor {
                   symbols.push({
                     name: spec.exported.name,
                     type: 'export',
-                    line: spec.exported.loc?.start.line || 0,
+                    line: this.getLineNumber(content, spec.exported.start),
                     isExported: true
                   });
                 }
@@ -178,7 +193,7 @@ export class OxcSymbolExtractor {
           case 'ClassDeclaration':
           case 'FunctionDeclaration':
           case 'TSInterfaceDeclaration':
-            this.extractFromDeclaration(node, symbols, false);
+            this.extractFromDeclaration(node, symbols, false, content);
             break;
         }
       });
@@ -193,7 +208,7 @@ export class OxcSymbolExtractor {
   /**
    * Extract symbols from a declaration node
    */
-  private extractFromDeclaration(node: any, symbols: OxcSymbol[], isExported: boolean): void {
+  private extractFromDeclaration(node: any, symbols: OxcSymbol[], isExported: boolean, content: string): void {
     switch (node.type) {
       case 'ClassDeclaration':
         if (node.id && node.id.name) {
@@ -201,7 +216,7 @@ export class OxcSymbolExtractor {
           symbols.push({
             name: className,
             type: 'class',
-            line: node.loc?.start.line || 0,
+            line: this.getLineNumber(content, node.start),
             isExported
           });
 
@@ -212,7 +227,7 @@ export class OxcSymbolExtractor {
                 symbols.push({
                   name: member.key.name,
                   type: 'function',
-                  line: member.loc?.start.line || 0,
+                  line: this.getLineNumber(content, member.start),
                   isExported, // Methods inherit class export status
                   className: className
                 });
@@ -227,7 +242,7 @@ export class OxcSymbolExtractor {
           symbols.push({
             name: node.id.name,
             type: 'function',
-            line: node.loc?.start.line || 0,
+            line: this.getLineNumber(content, node.start),
             isExported
           });
         }
@@ -238,7 +253,7 @@ export class OxcSymbolExtractor {
           symbols.push({
             name: node.id.name,
             type: 'export',
-            line: node.loc?.start.line || 0,
+            line: this.getLineNumber(content, node.start),
             isExported
           });
         }
@@ -254,7 +269,7 @@ export class OxcSymbolExtractor {
               symbols.push({
                 name,
                 type: 'function',
-                line: decl.loc?.start.line || 0,
+                line: this.getLineNumber(content, decl.start),
                 isExported
               });
             } else if (isExported) {
@@ -262,7 +277,7 @@ export class OxcSymbolExtractor {
               symbols.push({
                 name,
                 type: 'export',
-                line: decl.loc?.start.line || 0,
+                line: this.getLineNumber(content, decl.start),
                 isExported: true
               });
             }
