@@ -27,17 +27,17 @@ export class DependencyAnalyzer {
 
     // Convert OXC types to analysis types
     const imports: ImportDeclaration[] = dependencies.imports.map((imp) => ({
-      module: imp.module,
-      isRelative: imp.isRelative,
-      importedSymbols: imp.importedSymbols,
-      line: imp.line,
+      type: 'import' as const,
+      source: imp.module || '',
+      imports: imp.importedSymbols.map((name) => ({ name })),
+      line: imp.line || 0,
     }));
 
     const exports: ExportDeclaration[] = dependencies.exports.map((exp) => ({
-      module: exp.module,
-      exportedSymbols: exp.exportedSymbols,
-      isReExport: exp.isReExport,
-      line: exp.line,
+      type: 'export' as const,
+      name: exp.exportedSymbols[0] || 'default',
+      kind: 'const' as const,
+      line: exp.line || 0,
     }));
 
     return {
@@ -45,7 +45,9 @@ export class DependencyAnalyzer {
       imports,
       exports,
       symbols: [],
-      dependencies: imports.filter((imp) => imp.isRelative).map((imp) => imp.module),
+      dependencies: imports
+        .filter((imp) => imp.source.startsWith('./') || imp.source.startsWith('../'))
+        .map((imp) => imp.source),
       functions: [],
       semanticSymbols: [],
     };
@@ -59,28 +61,29 @@ export class DependencyAnalyzer {
     const edges: DependencyEdge[] = [];
 
     // Analyze all files
-    for (const [filename, content] of files) {
-      const analysis = await this.analyzeFile(filename, content);
-      nodes.set(filename, analysis);
-
-      // Debug: print what dependencies we found
-      console.log(`${filename} dependencies:`, analysis.dependencies);
+    for (const filename of Array.from(files.keys())) {
+      const content = files.get(filename);
+      if (content !== undefined) {
+        const analysis = await this.analyzeFile(filename, content);
+        nodes.set(filename, analysis);
+      }
     }
 
     // Build edges based on imports
-    for (const [filename, analysis] of nodes) {
-      for (const imp of analysis.imports) {
-        if (imp.isRelative) {
-          const resolvedPath = this.resolveModulePath(imp.module, filename, nodes);
-          console.log(`Resolving ${imp.module} from ${filename} -> ${resolvedPath}`);
-          if (resolvedPath) {
-            edges.push({
-              from: filename,
-              to: resolvedPath,
-              type: 'import',
-              symbols: imp.importedSymbols,
-            });
-            console.log(`Added edge: ${filename} -> ${resolvedPath}`);
+    for (const filename of Array.from(nodes.keys())) {
+      const analysis = nodes.get(filename);
+      if (analysis) {
+        for (const imp of analysis.imports) {
+          if (imp.source.startsWith('./') || imp.source.startsWith('../')) {
+            const resolvedPath = this.resolveModulePath(imp.source, filename, nodes);
+            if (resolvedPath) {
+              edges.push({
+                from: filename,
+                to: resolvedPath,
+                type: 'import',
+                symbols: imp.imports.map((spec) => spec.name),
+              });
+            }
           }
         }
       }
@@ -98,7 +101,7 @@ export class DependencyAnalyzer {
     nodes: Map<string, FileAnalysis>
   ): string | null {
     // Only handle relative imports
-    if (!modulePath.startsWith('./') && !modulePath.startsWith('../')) {
+    if (!(modulePath.startsWith('./') || modulePath.startsWith('../'))) {
       return null;
     }
 
@@ -131,7 +134,7 @@ export class DependencyAnalyzer {
     const adjList = new Map<string, string[]>();
 
     // Initialize
-    for (const filename of nodes.keys()) {
+    for (const filename of Array.from(nodes.keys())) {
       inDegree.set(filename, 0);
       adjList.set(filename, []);
     }
@@ -147,14 +150,18 @@ export class DependencyAnalyzer {
     const result: string[] = [];
 
     // Start with nodes that have no dependencies
-    for (const [filename, degree] of inDegree) {
+    for (const filename of Array.from(inDegree.keys())) {
+      const degree = inDegree.get(filename);
       if (degree === 0) {
         queue.push(filename);
       }
     }
 
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
       result.push(current);
 
       const neighbors = adjList.get(current) || [];
@@ -170,12 +177,9 @@ export class DependencyAnalyzer {
 
     // If result doesn't contain all nodes, there's a cycle
     if (result.length !== nodes.size) {
-      console.log('Cycle detected, returning alphabetical order');
       // Return alphabetical order as fallback
       return Array.from(nodes.keys()).sort();
     }
-
-    console.log('Topological sort result:', result);
 
     // For bottom-up ordering, reverse the result (dependencies first)
     return topDown ? result : result.reverse();

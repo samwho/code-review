@@ -97,9 +97,7 @@ export class OxcSymbolExtractor {
             // Store content for later processing
             this.fileHashCache.set(file.filename, content);
           }
-        } catch (error) {
-          console.warn(`Failed to get content for ${file.filename}:`, error);
-        }
+        } catch (_error) {}
       }
     }
 
@@ -170,8 +168,7 @@ export class OxcSymbolExtractor {
       }
 
       return null;
-    } catch (error) {
-      console.warn(`Failed to extract symbols from ${file.filename}:`, error);
+    } catch (_error) {
       return null;
     } finally {
       // Clean up temporary content cache
@@ -183,7 +180,9 @@ export class OxcSymbolExtractor {
    * Convert byte position to line number
    */
   private getLineNumber(content: string, bytePosition: number): number {
-    if (bytePosition === undefined || bytePosition < 0) return 1;
+    if (bytePosition === undefined || bytePosition < 0) {
+      return 1;
+    }
 
     let line = 1;
     for (let i = 0; i < bytePosition && i < content.length; i++) {
@@ -219,7 +218,12 @@ export class OxcSymbolExtractor {
               // Extract imported symbols
               if (node.specifiers) {
                 node.specifiers.forEach((spec) => {
-                  if (spec.type === 'ImportSpecifier' && spec.imported && spec.imported.name) {
+                  if (
+                    spec.type === 'ImportSpecifier' &&
+                    spec.imported &&
+                    'name' in spec.imported &&
+                    typeof spec.imported.name === 'string'
+                  ) {
                     importedSymbols.push(spec.imported.name);
                   } else if (
                     spec.type === 'ImportDefaultSpecifier' &&
@@ -259,7 +263,11 @@ export class OxcSymbolExtractor {
 
             if (node.specifiers) {
               node.specifiers.forEach((spec) => {
-                if (spec.exported?.name) {
+                if (
+                  spec.exported &&
+                  'name' in spec.exported &&
+                  typeof spec.exported.name === 'string'
+                ) {
                   exportedSymbols.push(spec.exported.name);
                 }
               });
@@ -302,9 +310,7 @@ export class OxcSymbolExtractor {
             break;
         }
       });
-    } catch (error) {
-      console.warn(`Failed to parse dependencies in ${filename} with OXC:`, error);
-    }
+    } catch (_error) {}
 
     return { imports, exports };
   }
@@ -353,7 +359,11 @@ export class OxcSymbolExtractor {
             // Handle re-exports (export { name } from 'module')
             if (node.specifiers) {
               node.specifiers.forEach((spec) => {
-                if (spec.exported?.name) {
+                if (
+                  spec.exported &&
+                  'name' in spec.exported &&
+                  typeof spec.exported.name === 'string'
+                ) {
                   symbols.push({
                     name: spec.exported.name,
                     type: 'export',
@@ -372,9 +382,7 @@ export class OxcSymbolExtractor {
             break;
         }
       });
-    } catch (error) {
-      console.warn(`Failed to parse ${filename} with OXC:`, error);
-    }
+    } catch (_error) {}
 
     return symbols;
   }
@@ -438,7 +446,7 @@ export class OxcSymbolExtractor {
             name: node.id.name,
             type: 'export',
             line: this.getLineNumber(content, node.start),
-            isExported,
+            isExported: true,
           });
         }
         break;

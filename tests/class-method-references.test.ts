@@ -104,14 +104,6 @@ authService.register(newUser);
       // This test checks the specific bug where class method references
       // incorrectly show the class definition instead of method references
 
-      const _classContent = `
-class UserService {
-  findUser(id: string) {
-    return this.database.findById(id);
-  }
-}
-`;
-
       const usageContent = `
 import { UserService } from './user-service';
 

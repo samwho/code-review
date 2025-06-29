@@ -6,10 +6,10 @@ import type { SimpleGit } from 'simple-git';
 import { simpleGit } from 'simple-git';
 import { APP_CONFIG } from './config';
 import { DependencyAnalyzer } from './dependency-analyzer';
-import { type OxcFileSymbols, OxcSymbolExtractor } from './oxc-symbol-extractor';
+import { type OxcFileSymbols, type OxcSymbol, OxcSymbolExtractor } from './oxc-symbol-extractor';
 import { DiffParser } from './parsers/diff-parser';
 import type { DependencyGraph } from './types/analysis';
-import type { FileDiff } from './types/git';
+import type { DiffLineType, FileDiff } from './types/git';
 import { isSupportedSourceFile } from './utils/file-utils';
 import {
   extractSymbolReferencesFromContent,
@@ -171,11 +171,7 @@ export class GitService {
       });
 
       return sorted;
-    } catch (error) {
-      console.warn(
-        'Failed to analyze dependencies for ordering, falling back to alphabetical:',
-        error
-      );
+    } catch {
       return this.sortFilesAlphabetically(diff);
     }
   }
@@ -183,10 +179,7 @@ export class GitService {
   /**
    * Analyzes dependencies for relevant files only (smart loading)
    */
-  private async analyzeDependencies(
-    branch: string,
-    changedFiles?: string[]
-  ): Promise<DependencyGraph> {
+  async analyzeDependencies(branch: string, changedFiles?: string[]): Promise<DependencyGraph> {
     let files: string[];
 
     if (changedFiles && changedFiles.length > 0) {
@@ -215,7 +208,6 @@ export class GitService {
       }
 
       files = Array.from(relevantFiles);
-      console.log(`Smart loading: reduced from ${allFiles.length} to ${files.length} files`);
     } else {
       // Fallback to loading all files
       files = await this.getFilesInBranch(branch);
@@ -236,8 +228,7 @@ export class GitService {
       try {
         const content = await this.getFileContents(branch, file);
         return { file, content, success: true };
-      } catch (error) {
-        console.warn(`Could not read file ${file}:`, error);
+      } catch {
         return { file, content: '', success: false };
       }
     });
@@ -261,8 +252,7 @@ export class GitService {
     try {
       const content = await this.git.show([`HEAD:${filename}`]);
       return content;
-    } catch (error) {
-      console.warn(`Failed to load content for ${filename}:`, error);
+    } catch {
       return null;
     }
   }
@@ -291,7 +281,9 @@ export class GitService {
       try {
         // Load current file content from git
         const content = await this.loadFileContent(file.filename);
-        if (!content) return;
+        if (!content) {
+          return;
+        }
 
         // Extract all symbol references using OXC
         const references = extractSymbolReferencesFromContent(
@@ -305,10 +297,8 @@ export class GitService {
           filename: file.filename,
           references,
         });
-
-        console.log(`🔍 Precomputed ${references.length} symbol references in ${file.filename}`);
-      } catch (error) {
-        console.warn(`Failed to precompute symbol references for ${file.filename}:`, error);
+      } catch {
+        // Failed to precompute symbol references
       }
     });
 
@@ -336,7 +326,12 @@ export class GitService {
     }
 
     // Process each symbol to find its references across all diff files
-    for (const [symbolName, symbolData] of allSymbols) {
+    for (const symbolName of Array.from(allSymbols.keys())) {
+      const symbolData = allSymbols.get(symbolName);
+      if (!symbolData) {
+        continue;
+      }
+
       const references = this.findSymbolReferencesInDiff(
         symbolName,
         symbolData.filename,
@@ -345,15 +340,20 @@ export class GitService {
 
       // Only include symbols that have references in the PR (used somewhere)
       if (references.length > 0) {
-        preprocessedSymbols.push({
+        const preprocessedSymbol: PreprocessedSymbol = {
           name: symbolName,
           filename: symbolData.filename,
           line: symbolData.symbol.line,
           type: symbolData.symbol.type,
           isExported: symbolData.symbol.isExported,
-          className: symbolData.symbol.className,
           references,
-        });
+        };
+
+        if (symbolData.symbol.type === 'function' && symbolData.symbol.className) {
+          preprocessedSymbol.className = symbolData.symbol.className;
+        }
+
+        preprocessedSymbols.push(preprocessedSymbol);
       }
     }
 
@@ -372,14 +372,20 @@ export class GitService {
 
     for (const file of diffFiles) {
       // Skip the file where the symbol is defined
-      if (file.filename === definitionFile) continue;
+      if (file.filename === definitionFile) {
+        continue;
+      }
 
       const language = this.detectLanguageFromFilename(file.filename);
-      if (!this.isHighlightableLanguage(language)) continue;
+      if (!this.isHighlightableLanguage(language)) {
+        continue;
+      }
 
       // Search through diff lines for symbol usage
       for (const line of file.lines) {
-        if (line.isHunkHeader) continue;
+        if (line.isHunkHeader) {
+          continue;
+        }
 
         // Use OXC-based precise symbol detection
         const lineNumber =

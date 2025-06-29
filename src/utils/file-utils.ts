@@ -33,7 +33,7 @@ export function getContentTypeForExtension(filename: string): string {
  * Checks if a file should be included in dependency analysis
  */
 export function isSupportedSourceFile(filename: string): boolean {
-  const extension = `.${getFileExtension(filename)}`;
+  const extension = `.${getFileExtension(filename)}` as '.ts' | '.js' | '.tsx' | '.jsx';
   return APP_CONFIG.SUPPORTED_EXTENSIONS.includes(extension);
 }
 
@@ -58,7 +58,9 @@ export function resolveModulePath(
     const pathParts = modulePath.split('/');
 
     for (const part of pathParts) {
-      if (part === '.') continue;
+      if (part === '.') {
+        continue;
+      }
       if (part === '..') {
         currentDir.pop();
       } else {

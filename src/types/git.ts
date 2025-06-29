@@ -38,7 +38,7 @@ export interface SerializedFileAnalysis {
   symbols: import('./analysis').SymbolReference[];
   dependencies: string[];
   functions: import('./analysis').FunctionDefinition[];
-  semanticSymbols?: import('../semantic-analyzer').SemanticSymbol[];
+  semanticSymbols?: unknown[];
 }
 
 export interface ModifiedFunctionEntry {

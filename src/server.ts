@@ -17,7 +17,7 @@ export class CodeReviewServer {
   private port: number;
 
   constructor(port?: number) {
-    this.port = port || Number(process.env.PORT) || APP_CONFIG.DEFAULT_PORT;
+    this.port = port || Number(process.env['PORT']) || APP_CONFIG.DEFAULT_PORT;
     this.apiRoutes = new ApiRoutes();
     this.staticRoutes = new StaticRoutes();
   }
@@ -26,16 +26,11 @@ export class CodeReviewServer {
    * Starts the HTTP server
    */
   async start(): Promise<void> {
-    const _server = Bun.serve({
+    Bun.serve({
       port: this.port,
       hostname: APP_CONFIG.HOSTNAME,
       fetch: this.handleRequest.bind(this),
     });
-
-    console.log(`Code Review UI server running at http://${APP_CONFIG.HOSTNAME}:${this.port}`);
-    console.log(
-      'Available repositories: basic-typescript-api, react-components-library, backend-service-refactor, utility-library-breaking-changes'
-    );
   }
 
   /**
@@ -52,15 +47,8 @@ export class CodeReviewServer {
 
       // Handle static files
       return await this.staticRoutes.handleStaticRequest(url.pathname);
-    } catch (error) {
-      console.error('Request handling error:', error);
+    } catch {
       return new Response('Internal server error', { status: 500 });
     }
   }
-}
-
-// Start the server if this file is run directly
-if (import.meta.main) {
-  const server = new CodeReviewServer();
-  server.start().catch(console.error);
 }

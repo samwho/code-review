@@ -33,9 +33,11 @@ export function findSymbolReferencesInLine(
 
     // Add semicolon if missing (for incomplete statements)
     if (
-      !processedContent.endsWith(';') &&
-      !processedContent.endsWith('{') &&
-      !processedContent.endsWith('}')
+      !(
+        processedContent.endsWith(';') ||
+        processedContent.endsWith('{') ||
+        processedContent.endsWith('}')
+      )
     ) {
       processedContent += ';';
     }
@@ -49,7 +51,6 @@ export function findSymbolReferencesInLine(
 
     const result = parseSync('temp.ts', wrappedCode, {
       sourceType: 'module',
-      allowReturnOutsideFunction: true,
     });
 
     if (!result.program) {
@@ -113,8 +114,8 @@ function walkAST(node: unknown, callback: (node: unknown) => void) {
   callback(node);
 
   // Walk all properties that could contain child nodes
-  for (const key in node) {
-    const value = node[key];
+  for (const key in node as Record<string, unknown>) {
+    const value = (node as Record<string, unknown>)[key];
     if (Array.isArray(value)) {
       for (const item of value) {
         walkAST(item, callback);
@@ -133,8 +134,8 @@ function getParentNode(root: unknown, targetNode: unknown): unknown {
 
   walkAST(root, (node: unknown) => {
     if (node !== targetNode && node && typeof node === 'object') {
-      for (const key in node) {
-        const value = node[key];
+      for (const key in node as Record<string, unknown>) {
+        const value = (node as Record<string, unknown>)[key];
         if (value === targetNode || (Array.isArray(value) && value.includes(targetNode))) {
           parent = node;
         }
@@ -152,12 +153,12 @@ function determineIdentifierContext(
   identifierNode: unknown,
   parentNode: unknown
 ): SymbolOccurrence['context'] {
-  const _identifier = identifierNode as { type: string };
   const parent = parentNode as {
     type?: string;
     callee?: unknown;
     property?: unknown;
     left?: unknown;
+    object?: unknown;
   };
 
   if (!parent?.type) {
@@ -181,51 +182,6 @@ function determineIdentifierContext(
 
     case 'AssignmentExpression':
       if (parent.left === identifierNode) {
-        return 'assignment';
-      }
-      return 'identifier';
-
-    case 'ImportSpecifier':
-    case 'ImportDefaultSpecifier':
-    case 'ImportNamespaceSpecifier':
-      return 'import';
-
-    case 'ExportSpecifier':
-    case 'ExportDefaultDeclaration':
-    case 'ExportNamedDeclaration':
-      return 'export';
-
-    default:
-      return 'identifier';
-  }
-}
-
-// Legacy implementation that was replaced
-function _determineIdentifierContextOld(
-  identifierNode: unknown,
-  parentNode: unknown
-): SymbolOccurrence['context'] {
-  if (!parentNode) {
-    return 'identifier';
-  }
-
-  switch (parentNode.type) {
-    case 'CallExpression':
-      // Check if this identifier is the callee
-      if (parentNode.callee === identifierNode) {
-        return 'function_call';
-      }
-      return 'identifier';
-
-    case 'MemberExpression':
-      // Check if this is the object being accessed (obj.prop vs obj.identifier)
-      if (parentNode.object === identifierNode) {
-        return 'property_access';
-      }
-      return 'identifier';
-
-    case 'AssignmentExpression':
-      if (parentNode.left === identifierNode) {
         return 'assignment';
       }
       return 'identifier';
@@ -270,7 +226,7 @@ function fallbackSymbolDetection(
     const char = lineContent[i];
     const prevChar = i > 0 ? lineContent[i - 1] : '';
 
-    if (!inString && !inTemplate) {
+    if (!(inString || inTemplate)) {
       if (char === '"' || char === "'") {
         inString = true;
         stringChar = char;

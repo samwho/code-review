@@ -23,7 +23,7 @@ interface TestFile {
 class TestRepoBuilder {
   private tempDir: string;
   private repoPath: string;
-  private git: SimpleGit;
+  private git!: SimpleGit;
 
   constructor(testName: string) {
     this.tempDir = `/tmp/code-review-test-${testName}-${Date.now()}`;

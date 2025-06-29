@@ -23,7 +23,7 @@ interface TestFile {
 class LocationTestRepoBuilder {
   private tempDir: string;
   private repoPath: string;
-  private git: SimpleGit;
+  private git!: SimpleGit;
 
   constructor(testName: string) {
     this.tempDir = `/tmp/location-test-${testName}-${Date.now()}`;
@@ -97,34 +97,34 @@ function findExpectedLineNumbers(content: string, symbolNames: string[]): Map<st
     const line = lines[i];
     for (const symbolName of symbolNames) {
       // Look for class declarations
-      if (line.includes(`class ${symbolName}`) || line.includes(`export class ${symbolName}`)) {
+      if (line?.includes(`class ${symbolName}`) || line?.includes(`export class ${symbolName}`)) {
         expectedLines.set(symbolName, i + 1);
       }
       // Look for function declarations
       else if (
-        line.includes(`function ${symbolName}`) ||
-        line.includes(`export function ${symbolName}`)
+        line?.includes(`function ${symbolName}`) ||
+        line?.includes(`export function ${symbolName}`)
       ) {
         expectedLines.set(symbolName, i + 1);
       }
       // Look for method declarations (inside class)
       else if (
-        line.trim().startsWith(`${symbolName}(`) ||
-        line.trim().startsWith(`async ${symbolName}(`)
+        line?.trim().startsWith(`${symbolName}(`) ||
+        line?.trim().startsWith(`async ${symbolName}(`)
       ) {
         expectedLines.set(symbolName, i + 1);
       }
       // Look for arrow function assignments
       else if (
-        line.includes(`const ${symbolName} =`) ||
-        line.includes(`export const ${symbolName} =`)
+        line?.includes(`const ${symbolName} =`) ||
+        line?.includes(`export const ${symbolName} =`)
       ) {
         expectedLines.set(symbolName, i + 1);
       }
       // Look for interface declarations
       else if (
-        line.includes(`interface ${symbolName}`) ||
-        line.includes(`export interface ${symbolName}`)
+        line?.includes(`interface ${symbolName}`) ||
+        line?.includes(`export interface ${symbolName}`)
       ) {
         expectedLines.set(symbolName, i + 1);
       }
@@ -184,7 +184,15 @@ interface User {
   await builder.addFiles(files);
   await builder.commit('Add location test file');
 
-  const fileDiffs = [{ filename: 'src/locations.ts', status: 'added' as const, lines: [] }];
+  const fileDiffs = [
+    {
+      filename: 'src/locations.ts',
+      status: 'added' as const,
+      lines: [],
+      isNew: true,
+      isDeleted: false,
+    },
+  ];
 
   // Get expected line numbers by parsing the content manually
   const expectedLines = findExpectedLineNumbers(testContent, [
@@ -205,27 +213,24 @@ interface User {
   const oxcFileSymbols = oxcSymbols[0];
 
   // Test UserService class line number
-  const oxcUserService = oxcFileSymbols.symbols.find((s) => s.name === 'UserService');
-  expect(oxcUserService?.line).toBe(expectedLines.get('UserService'));
+  const oxcUserService = oxcFileSymbols!.symbols.find((s) => s.name === 'UserService');
+  expect(oxcUserService?.line).toBe(expectedLines.get('UserService') ?? 0);
 
   // Test createUser method line number
-  const oxcCreateUser = oxcFileSymbols.symbols.find((s) => s.name === 'createUser');
-  expect(oxcCreateUser?.line).toBe(expectedLines.get('createUser'));
+  const oxcCreateUser = oxcFileSymbols!.symbols.find((s) => s.name === 'createUser');
+  expect(oxcCreateUser?.line).toBe(expectedLines.get('createUser') ?? 0);
 
   // Test generateId function line number
-  const oxcGenerateId = oxcFileSymbols.symbols.find((s) => s.name === 'generateId');
-  expect(oxcGenerateId?.line).toBe(expectedLines.get('generateId'));
+  const oxcGenerateId = oxcFileSymbols!.symbols.find((s) => s.name === 'generateId');
+  expect(oxcGenerateId?.line).toBe(expectedLines.get('generateId') ?? 0);
 
   // Test interface line number
-  const oxcUser = oxcFileSymbols.symbols.find((s) => s.name === 'User');
-  expect(oxcUser?.line).toBe(expectedLines.get('User'));
+  const oxcUser = oxcFileSymbols!.symbols.find((s) => s.name === 'User');
+  expect(oxcUser?.line).toBe(expectedLines.get('User') ?? 0);
 
   // Verify all symbols have valid line numbers
-  for (const symbol of oxcFileSymbols.symbols) {
-    expect(symbol.line).toBeGreaterThan(
-      0,
-      `Symbol '${symbol.name}' has invalid line number ${symbol.line}`
-    );
+  for (const symbol of oxcFileSymbols!.symbols) {
+    expect(symbol.line).toBeGreaterThan(0);
   }
 });
 
@@ -303,7 +308,15 @@ export class
   await builder.addFiles(files);
   await builder.commit('Add complex location test file');
 
-  const fileDiffs = [{ filename: 'src/complex.ts', status: 'added' as const, lines: [] }];
+  const fileDiffs = [
+    {
+      filename: 'src/complex.ts',
+      status: 'added' as const,
+      lines: [],
+      isNew: true,
+      isDeleted: false,
+    },
+  ];
 
   // Get expected line numbers
   const expectedLines = findExpectedLineNumbers(testContent, [
@@ -322,24 +335,21 @@ export class
   const oxcFileSymbols = oxcSymbols[0];
 
   // Test ComplexService class
-  const oxcComplexService = oxcFileSymbols.symbols.find((s) => s.name === 'ComplexService');
+  const oxcComplexService = oxcFileSymbols!.symbols.find((s) => s.name === 'ComplexService');
   expect(oxcComplexService?.line).toBe(1); // Class should be on line 1
 
   // Test multiline method
-  const oxcProcessData = oxcFileSymbols.symbols.find((s) => s.name === 'processData');
+  const oxcProcessData = oxcFileSymbols!.symbols.find((s) => s.name === 'processData');
   // The method declaration starts on line 4
   expect(oxcProcessData?.line).toBe(4);
 
   // Test multiline arrow function
-  const oxcMultiLineArrow = oxcFileSymbols.symbols.find((s) => s.name === 'multiLineArrow');
-  expect(oxcMultiLineArrow?.line).toBe(expectedLines.get('multiLineArrow'));
+  const oxcMultiLineArrow = oxcFileSymbols!.symbols.find((s) => s.name === 'multiLineArrow');
+  expect(oxcMultiLineArrow?.line).toBe(expectedLines.get('multiLineArrow') ?? 0);
 
   // Verify all symbols have valid line numbers
-  for (const symbol of oxcFileSymbols.symbols) {
-    expect(symbol.line).toBeGreaterThan(
-      0,
-      `Symbol '${symbol.name}' has invalid line number ${symbol.line}`
-    );
+  for (const symbol of oxcFileSymbols!.symbols) {
+    expect(symbol.line).toBeGreaterThan(0);
   }
 });
 
@@ -403,7 +413,9 @@ class SecondClass {
   await builder.addFiles(files);
   await builder.commit('Add edge case location test file');
 
-  const fileDiffs = [{ filename: 'src/edge.ts', status: 'added' as const, lines: [] }];
+  const fileDiffs = [
+    { filename: 'src/edge.ts', status: 'added' as const, lines: [], isNew: true, isDeleted: false },
+  ];
 
   // Test OXC extractor
   const oxcSymbols = await repo.oxcExtractor.extractFromChangedFiles(fileDiffs, 'HEAD');
@@ -416,26 +428,22 @@ class SecondClass {
     lines.findIndex((line) => line.includes('class EmptyLinesService')) + 1;
   const processDataLine = lines.findIndex((line) => line.trim().startsWith('processData(')) + 1;
   const anotherMethodLine = lines.findIndex((line) => line.trim().startsWith('anotherMethod(')) + 1;
-  const _secondClassLine = lines.findIndex((line) => line.includes('class SecondClass')) + 1;
 
   // Test EmptyLinesService class
-  const oxcEmptyLinesService = oxcFileSymbols.symbols.find((s) => s.name === 'EmptyLinesService');
+  const oxcEmptyLinesService = oxcFileSymbols!.symbols.find((s) => s.name === 'EmptyLinesService');
   expect(oxcEmptyLinesService?.line).toBe(emptyLinesServiceLine);
 
   // Test processData method
-  const oxcProcessData = oxcFileSymbols.symbols.find((s) => s.name === 'processData');
+  const oxcProcessData = oxcFileSymbols!.symbols.find((s) => s.name === 'processData');
   expect(oxcProcessData?.line).toBe(processDataLine);
 
   // Test anotherMethod (multiline declaration with empty lines)
-  const oxcAnotherMethod = oxcFileSymbols.symbols.find((s) => s.name === 'anotherMethod');
+  const oxcAnotherMethod = oxcFileSymbols!.symbols.find((s) => s.name === 'anotherMethod');
   expect(oxcAnotherMethod?.line).toBe(anotherMethodLine);
 
   // Verify all symbols have valid line numbers
-  for (const symbol of oxcFileSymbols.symbols) {
-    expect(symbol.line).toBeGreaterThan(
-      0,
-      `Symbol '${symbol.name}' has invalid line number ${symbol.line}`
-    );
+  for (const symbol of oxcFileSymbols!.symbols) {
+    expect(symbol.line).toBeGreaterThan(0);
   }
 });
 
@@ -527,7 +535,15 @@ export const isValidEmail = (email: string): boolean => {
   await builder.addFiles(files);
   await builder.commit('Add realistic file');
 
-  const fileDiffs = [{ filename: 'src/real-file.ts', status: 'added' as const, lines: [] }];
+  const fileDiffs = [
+    {
+      filename: 'src/real-file.ts',
+      status: 'added' as const,
+      lines: [],
+      isNew: true,
+      isDeleted: false,
+    },
+  ];
 
   // Test OXC extractor
   const oxcSymbols = await repo.oxcExtractor.extractFromChangedFiles(fileDiffs, 'HEAD');
@@ -538,8 +554,6 @@ export const isValidEmail = (email: string): boolean => {
   const lines = testContent.split('\n');
   const userServiceLine = lines.findIndex((line) => line.includes('export class UserService')) + 1;
   const createUserLine = lines.findIndex((line) => line.trim().startsWith('async createUser(')) + 1;
-  const _findUserByIdLine =
-    lines.findIndex((line) => line.trim().startsWith('async findUserById(')) + 1;
   const validateUserLine =
     lines.findIndex((line) => line.trim().startsWith('private async validateUser(')) + 1;
   const formatUserNameLine =
@@ -548,37 +562,34 @@ export const isValidEmail = (email: string): boolean => {
     lines.findIndex((line) => line.includes('export const isValidEmail')) + 1;
 
   // Test UserService class
-  const oxcUserService = oxcFileSymbols.symbols.find((s) => s.name === 'UserService');
+  const oxcUserService = oxcFileSymbols!.symbols.find((s) => s.name === 'UserService');
   expect(oxcUserService?.line).toBe(userServiceLine);
 
   // Test createUser method
-  const oxcCreateUser = oxcFileSymbols.symbols.find((s) => s.name === 'createUser');
+  const oxcCreateUser = oxcFileSymbols!.symbols.find((s) => s.name === 'createUser');
   expect(oxcCreateUser?.line).toBe(createUserLine);
 
   // Test validateUser private method
-  const oxcValidateUser = oxcFileSymbols.symbols.find((s) => s.name === 'validateUser');
+  const oxcValidateUser = oxcFileSymbols!.symbols.find((s) => s.name === 'validateUser');
   expect(oxcValidateUser?.line).toBe(validateUserLine);
 
   // Test standalone function
-  const oxcFormatUserName = oxcFileSymbols.symbols.find((s) => s.name === 'formatUserName');
+  const oxcFormatUserName = oxcFileSymbols!.symbols.find((s) => s.name === 'formatUserName');
   expect(oxcFormatUserName?.line).toBe(formatUserNameLine);
 
   // Test arrow function
-  const oxcIsValidEmail = oxcFileSymbols.symbols.find((s) => s.name === 'isValidEmail');
+  const oxcIsValidEmail = oxcFileSymbols!.symbols.find((s) => s.name === 'isValidEmail');
   expect(oxcIsValidEmail?.line).toBe(isValidEmailLine);
 
   // Print out symbols for debugging
   console.log('OXC extractor symbols:');
-  oxcFileSymbols.symbols.forEach((s) => {
+  oxcFileSymbols!.symbols.forEach((s) => {
     console.log(`  ${s.name}: line ${s.line} (${s.type})`);
   });
 
   // Verify all symbols have valid line numbers
-  for (const symbol of oxcFileSymbols.symbols) {
-    expect(symbol.line).toBeGreaterThan(
-      0,
-      `Symbol '${symbol.name}' has invalid line number ${symbol.line}`
-    );
+  for (const symbol of oxcFileSymbols!.symbols) {
+    expect(symbol.line).toBeGreaterThan(0);
   }
 });
 
@@ -610,7 +621,15 @@ export function testFunction(): void {
   await builder.addFiles(files);
   await builder.commit('Add zero line bug test');
 
-  const fileDiffs = [{ filename: 'src/zero-bug.ts', status: 'added' as const, lines: [] }];
+  const fileDiffs = [
+    {
+      filename: 'src/zero-bug.ts',
+      status: 'added' as const,
+      lines: [],
+      isNew: true,
+      isDeleted: false,
+    },
+  ];
 
   // Test OXC extractor
   const oxcSymbols = await repo.oxcExtractor.extractFromChangedFiles(fileDiffs, 'HEAD');
@@ -618,20 +637,14 @@ export function testFunction(): void {
   const oxcFileSymbols = oxcSymbols[0];
 
   // Check that NO symbols have line number 0
-  for (const symbol of oxcFileSymbols.symbols) {
-    expect(symbol.line).toBeGreaterThan(
-      0,
-      `OxcSymbolExtractor: Symbol '${symbol.name}' has line number 0, should be > 0`
-    );
+  for (const symbol of oxcFileSymbols!.symbols) {
+    expect(symbol.line).toBeGreaterThan(0);
   }
 
   // All line numbers should be reasonable (within the file)
   const lineCount = testContent.split('\n').length;
 
-  for (const symbol of oxcFileSymbols.symbols) {
-    expect(symbol.line).toBeLessThanOrEqual(
-      lineCount,
-      `OxcSymbolExtractor: Symbol '${symbol.name}' line ${symbol.line} exceeds file length ${lineCount}`
-    );
+  for (const symbol of oxcFileSymbols!.symbols) {
+    expect(symbol.line).toBeLessThanOrEqual(lineCount);
   }
 });

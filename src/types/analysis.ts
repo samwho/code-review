@@ -59,7 +59,7 @@ export interface FileAnalysis {
   symbols: SymbolReference[];
   dependencies: string[];
   functions: FunctionDefinition[];
-  semanticSymbols?: import('../semantic-analyzer').SemanticSymbol[];
+  semanticSymbols?: unknown[];
 }
 
 export interface DependencyEdge {

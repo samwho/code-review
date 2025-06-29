@@ -115,8 +115,8 @@ export class ApiRoutes {
     // Convert to serializable format
     const serializedGraph = {
       nodes: Array.from(graph.nodes.entries()).map(([filename, analysis]) => ({
-        filename,
         ...analysis,
+        filename,
       })),
       edges: graph.edges,
     };

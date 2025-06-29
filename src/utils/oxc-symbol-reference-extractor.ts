@@ -66,8 +66,8 @@ export function extractSymbolReferencesFromContent(
         });
       }
     });
-  } catch (error) {
-    console.warn(`Failed to parse ${filename} for symbol references:`, error);
+  } catch {
+    // Failed to parse file for symbol references
   }
 
   return references;
@@ -107,8 +107,8 @@ function walkASTWithParent(
   callback(node, parent);
 
   // Walk all properties that could contain child nodes
-  for (const key in node) {
-    const value = node[key];
+  for (const key in node as Record<string, unknown>) {
+    const value = (node as Record<string, unknown>)[key];
     if (Array.isArray(value)) {
       for (const item of value) {
         walkASTWithParent(item, node, callback);
@@ -123,7 +123,6 @@ function walkASTWithParent(
  * Check if an identifier is a definition rather than a reference
  */
 function isDefinition(node: unknown, parent: unknown): boolean {
-  const _nodeTyped = node as { type?: string };
   const parentTyped = parent as {
     type?: string;
     id?: unknown;
@@ -131,8 +130,12 @@ function isDefinition(node: unknown, parent: unknown): boolean {
     local?: unknown;
   } | null;
 
-  if (!parentTyped) return false;
-  if (!parent) return false;
+  if (!parentTyped) {
+    return false;
+  }
+  if (!parent) {
+    return false;
+  }
 
   switch (parentTyped.type) {
     // Class definitions
@@ -171,26 +174,6 @@ function isDefinition(node: unknown, parent: unknown): boolean {
     default:
       return false;
   }
-}
-
-/**
- * Get parent node of a given node (simplified approach)
- */
-function _getParentNode(root: any, targetNode: any): any {
-  let parent = null;
-
-  walkAST(root, (node: any) => {
-    if (node !== targetNode && node && typeof node === 'object') {
-      for (const key in node) {
-        const value = node[key];
-        if (value === targetNode || (Array.isArray(value) && value.includes(targetNode))) {
-          parent = node;
-        }
-      }
-    }
-  });
-
-  return parent;
 }
 
 /**
@@ -251,7 +234,9 @@ function determineIdentifierContext(
  * Convert byte position to line number
  */
 function getLineNumber(content: string, bytePosition: number): number {
-  if (bytePosition === 0) return 1;
+  if (bytePosition === 0) {
+    return 1;
+  }
 
   const beforePosition = content.substring(0, bytePosition);
   const lines = beforePosition.split('\n');
@@ -262,10 +247,12 @@ function getLineNumber(content: string, bytePosition: number): number {
  * Convert byte position to column number
  */
 function getColumnNumber(content: string, bytePosition: number): number {
-  if (bytePosition === 0) return 0;
+  if (bytePosition === 0) {
+    return 0;
+  }
 
   const beforePosition = content.substring(0, bytePosition);
   const lines = beforePosition.split('\n');
   const lastLine = lines[lines.length - 1];
-  return lastLine.length;
+  return lastLine?.length || 0;
 }
