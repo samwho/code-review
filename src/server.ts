@@ -53,3 +53,9 @@ export class CodeReviewServer {
     }
   }
 }
+
+// Start the server if this file is run directly
+if (import.meta.main) {
+  const server = new CodeReviewServer();
+  await server.start();
+}
