@@ -81,6 +81,8 @@ body {
 
 .header-center {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
   justify-content: center;
 }
 
@@ -152,10 +154,10 @@ body {
 .repo-selector {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
 .repo-selector label {
@@ -170,8 +172,8 @@ body {
   border-radius: 6px;
   background-color: var(--bg-primary);
   font-size: 14px;
-  min-width: 200px;
-  max-width: 300px;
+  min-width: 180px;
+  max-width: 250px;
   color: var(--text-primary);
   font-weight: 500;
 }
@@ -689,6 +691,16 @@ body {
     font-size: 18px;
   }
   
+  .repo-selector {
+    gap: 8px;
+  }
+  
+  .repo-selector select {
+    min-width: 140px;
+    max-width: 180px;
+    font-size: 13px;
+  }
+  
   .branch-selector {
     justify-content: center;
     gap: 6px;
@@ -734,6 +746,29 @@ body {
 @media (max-width: 480px) {
   .header {
     padding: 12px;
+  }
+  
+  .repo-selector {
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+  
+  .repo-selector > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+  
+  .repo-selector label {
+    min-width: 70px;
+    font-size: 13px;
+  }
+  
+  .repo-selector select {
+    flex: 1;
+    max-width: none;
   }
   
   .branch-selector {
