@@ -38,18 +38,24 @@ export function extractSymbolReferencesFromContent(
     }
 
     // Walk the entire AST to find identifier references
-    walkAST(result.program, (node: any) => {
+    walkASTWithParent(result.program, null, (node: any, parent: any) => {
       if (node.type === 'Identifier' && targetSymbols.has(node.name)) {
-        // Determine context based on parent node
-        const context = determineIdentifierContext(node, getParentNode(result.program, node));
+        // Skip identifiers that are definitions, not references
+        if (isDefinition(node, parent)) {
+          return;
+        }
         
-        // Convert byte position to line number
-        const line = getLineNumber(content, node.span?.start || 0);
+        // Determine context based on parent node
+        const context = determineIdentifierContext(node, parent);
+        
+        // Convert byte position to line number  
+        const bytePosition = node.start || 0;
+        const line = getLineNumber(content, bytePosition);
         
         references.push({
           name: node.name,
           line,
-          column: node.span?.start?.column || 0,
+          column: getColumnNumber(content, bytePosition),
           context
         });
       }
@@ -82,25 +88,70 @@ export function lineContainsAnySymbol(
 }
 
 /**
- * Walk AST nodes recursively
+ * Walk AST nodes recursively with parent tracking
  */
-function walkAST(node: any, callback: (node: any) => void) {
+function walkASTWithParent(node: any, parent: any, callback: (node: any, parent: any) => void) {
   if (!node || typeof node !== 'object') {
     return;
   }
 
-  callback(node);
+  callback(node, parent);
 
   // Walk all properties that could contain child nodes
   for (const key in node) {
     const value = node[key];
     if (Array.isArray(value)) {
       for (const item of value) {
-        walkAST(item, callback);
+        walkASTWithParent(item, node, callback);
       }
     } else if (value && typeof value === 'object') {
-      walkAST(value, callback);
+      walkASTWithParent(value, node, callback);
     }
+  }
+}
+
+/**
+ * Check if an identifier is a definition rather than a reference
+ */
+function isDefinition(node: any, parent: any): boolean {
+  if (!parent) return false;
+
+  switch (parent.type) {
+    // Class definitions
+    case 'ClassDeclaration':
+      return parent.id === node;
+    
+    // Function definitions  
+    case 'FunctionDeclaration':
+      return parent.id === node;
+    
+    // Method definitions
+    case 'MethodDefinition':
+      return parent.key === node;
+    
+    // Property definitions
+    case 'PropertyDefinition':
+      return parent.key === node;
+    
+    // Variable declarations
+    case 'VariableDeclarator':
+      return parent.id === node;
+    
+    // Function parameters
+    case 'Parameter':
+      return true;
+    
+    // Import/export specifiers - these are declarations, not references
+    case 'ImportSpecifier':
+    case 'ImportDefaultSpecifier':
+    case 'ImportNamespaceSpecifier':
+      return parent.local === node;
+    
+    case 'ExportSpecifier':
+      return parent.local === node;
+    
+    default:
+      return false;
   }
 }
 
@@ -141,10 +192,11 @@ function determineIdentifierContext(identifierNode: any, parentNode: any): Symbo
       return 'identifier';
 
     case 'MemberExpression':
-      // Check if this is the object being accessed (obj.prop vs obj.identifier)
-      if (parentNode.object === identifierNode) {
+      // Check if this is the property being accessed (obj.prop)
+      if (parentNode.property === identifierNode) {
         return 'property_access';
       }
+      // If it's the object being accessed (obj.prop), it's still a reference
       return 'identifier';
 
     case 'AssignmentExpression':
@@ -177,4 +229,16 @@ function getLineNumber(content: string, bytePosition: number): number {
   const beforePosition = content.substring(0, bytePosition);
   const lines = beforePosition.split('\n');
   return lines.length;
+}
+
+/**
+ * Convert byte position to column number
+ */
+function getColumnNumber(content: string, bytePosition: number): number {
+  if (bytePosition === 0) return 0;
+  
+  const beforePosition = content.substring(0, bytePosition);
+  const lines = beforePosition.split('\n');
+  const lastLine = lines[lines.length - 1];
+  return lastLine.length;
 }
