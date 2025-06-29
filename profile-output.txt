@@ -1,0 +1,114 @@
+Starting diff loading performance profiling...
+
+Repository: /home/sam/code-review/test-repos/backend-service-refactor
+Comparing: main...feature/auth-improvements
+Order: bottom-up
+
+⏱️  Profiling getOrderedFiles method...
+src/controllers/ProductController.ts dependencies: [ "../services/ProductService",
+  "../services/AuthService", "../types/api", "../models/Product"
+]
+src/controllers/UserController.ts dependencies: [ "../services/AuthService", "../types/api",
+  "../models/User", "../utils/database", "../services/RateLimitService", "../services/PermissionService",
+  "../services/OAuthService", "../services/AuditService"
+]
+src/index.ts dependencies: []
+src/middleware/auth.ts dependencies: [ "../services/AuthService", "../models/User" ]
+src/models/Product.ts dependencies: []
+src/models/User.ts dependencies: []
+src/routes/index.ts dependencies: [ "../services/AuthService", "../services/ProductService",
+  "../controllers/UserController", "../controllers/ProductController", "../middleware/auth"
+]
+src/services/AuditService.ts dependencies: [ "../models/User", "../utils/database" ]
+src/services/AuthService.ts dependencies: [ "../models/User", "../utils/database" ]
+src/services/OAuthService.ts dependencies: []
+src/services/PermissionService.ts dependencies: []
+src/services/ProductService.ts dependencies: [ "../models/Product", "../utils/database",
+  "./AuthService"
+]
+src/services/RateLimitService.ts dependencies: []
+src/types/api.ts dependencies: []
+src/utils/database.ts dependencies: [ "../models/User", "../models/Product" ]
+Resolving ../services/ProductService from src/controllers/ProductController.ts -> src/services/ProductService.ts
+Added edge: src/controllers/ProductController.ts -> src/services/ProductService.ts
+Resolving ../services/AuthService from src/controllers/ProductController.ts -> src/services/AuthService.ts
+Added edge: src/controllers/ProductController.ts -> src/services/AuthService.ts
+Resolving ../types/api from src/controllers/ProductController.ts -> src/types/api.ts
+Added edge: src/controllers/ProductController.ts -> src/types/api.ts
+Resolving ../models/Product from src/controllers/ProductController.ts -> src/models/Product.ts
+Added edge: src/controllers/ProductController.ts -> src/models/Product.ts
+Resolving ../services/AuthService from src/controllers/UserController.ts -> src/services/AuthService.ts
+Added edge: src/controllers/UserController.ts -> src/services/AuthService.ts
+Resolving ../types/api from src/controllers/UserController.ts -> src/types/api.ts
+Added edge: src/controllers/UserController.ts -> src/types/api.ts
+Resolving ../models/User from src/controllers/UserController.ts -> src/models/User.ts
+Added edge: src/controllers/UserController.ts -> src/models/User.ts
+Resolving ../utils/database from src/controllers/UserController.ts -> src/utils/database.ts
+Added edge: src/controllers/UserController.ts -> src/utils/database.ts
+Resolving ../services/RateLimitService from src/controllers/UserController.ts -> src/services/RateLimitService.ts
+Added edge: src/controllers/UserController.ts -> src/services/RateLimitService.ts
+Resolving ../services/PermissionService from src/controllers/UserController.ts -> src/services/PermissionService.ts
+Added edge: src/controllers/UserController.ts -> src/services/PermissionService.ts
+Resolving ../services/OAuthService from src/controllers/UserController.ts -> src/services/OAuthService.ts
+Added edge: src/controllers/UserController.ts -> src/services/OAuthService.ts
+Resolving ../services/AuditService from src/controllers/UserController.ts -> src/services/AuditService.ts
+Added edge: src/controllers/UserController.ts -> src/services/AuditService.ts
+Resolving ../services/AuthService from src/middleware/auth.ts -> src/services/AuthService.ts
+Added edge: src/middleware/auth.ts -> src/services/AuthService.ts
+Resolving ../models/User from src/middleware/auth.ts -> src/models/User.ts
+Added edge: src/middleware/auth.ts -> src/models/User.ts
+Resolving ../services/AuthService from src/routes/index.ts -> src/services/AuthService.ts
+Added edge: src/routes/index.ts -> src/services/AuthService.ts
+Resolving ../services/ProductService from src/routes/index.ts -> src/services/ProductService.ts
+Added edge: src/routes/index.ts -> src/services/ProductService.ts
+Resolving ../controllers/UserController from src/routes/index.ts -> src/controllers/UserController.ts
+Added edge: src/routes/index.ts -> src/controllers/UserController.ts
+Resolving ../controllers/ProductController from src/routes/index.ts -> src/controllers/ProductController.ts
+Added edge: src/routes/index.ts -> src/controllers/ProductController.ts
+Resolving ../middleware/auth from src/routes/index.ts -> src/middleware/auth.ts
+Added edge: src/routes/index.ts -> src/middleware/auth.ts
+Resolving ../models/User from src/services/AuditService.ts -> src/models/User.ts
+Added edge: src/services/AuditService.ts -> src/models/User.ts
+Resolving ../utils/database from src/services/AuditService.ts -> src/utils/database.ts
+Added edge: src/services/AuditService.ts -> src/utils/database.ts
+Resolving ../models/User from src/services/AuthService.ts -> src/models/User.ts
+Added edge: src/services/AuthService.ts -> src/models/User.ts
+Resolving ../utils/database from src/services/AuthService.ts -> src/utils/database.ts
+Added edge: src/services/AuthService.ts -> src/utils/database.ts
+Resolving ../models/Product from src/services/ProductService.ts -> src/models/Product.ts
+Added edge: src/services/ProductService.ts -> src/models/Product.ts
+Resolving ../utils/database from src/services/ProductService.ts -> src/utils/database.ts
+Added edge: src/services/ProductService.ts -> src/utils/database.ts
+Resolving ./AuthService from src/services/ProductService.ts -> src/services/AuthService.ts
+Added edge: src/services/ProductService.ts -> src/services/AuthService.ts
+Resolving ../models/User from src/utils/database.ts -> src/models/User.ts
+Added edge: src/utils/database.ts -> src/models/User.ts
+Resolving ../models/Product from src/utils/database.ts -> src/models/Product.ts
+Added edge: src/utils/database.ts -> src/models/Product.ts
+Topological sort result: [
+  "src/index.ts", "src/routes/index.ts", "src/controllers/UserController.ts", "src/controllers/ProductController.ts",
+  "src/middleware/auth.ts", "src/services/RateLimitService.ts", "src/services/PermissionService.ts",
+  "src/services/OAuthService.ts", "src/services/AuditService.ts", "src/services/ProductService.ts",
+  "src/types/api.ts", "src/services/AuthService.ts", "src/utils/database.ts", "src/models/User.ts",
+  "src/models/Product.ts"
+]
+
+📊 Performance Results:
+- Total execution time: 352.99ms
+- Files processed: 12
+- Symbols extracted: 8
+- Time per file: 29.42ms
+
+📋 Processed files:
+  1. src/models/User.ts (158 lines)
+  2. src/utils/database.ts (184 lines)
+  3. src/services/AuthService.ts (437 lines)
+  4. src/types/api.ts (199 lines)
+  5. src/services/AuditService.ts (301 lines)
+  6. src/services/OAuthService.ts (125 lines)
+  7. src/services/PermissionService.ts (88 lines)
+  8. src/services/RateLimitService.ts (6 lines)
+  9. src/middleware/auth.ts (19 lines)
+  10. src/controllers/ProductController.ts (106 lines)
+  11. src/controllers/UserController.ts (695 lines)
+  12. src/index.ts (20 lines)

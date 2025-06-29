@@ -18,9 +18,28 @@ import type { DependencyGraph } from './types/analysis';
 // Re-export types for backward compatibility
 export type { DiffLine, FileDiff } from './types/git';
 
+export interface SymbolReference {
+  file: string;
+  line: number;
+  type: 'added' | 'removed' | 'context';
+  context: string;
+  content: string;
+}
+
+export interface PreprocessedSymbol {
+  name: string;
+  filename: string;
+  line: number;
+  type: string;
+  isExported: boolean;
+  className?: string;
+  references: SymbolReference[];
+}
+
 export interface SimplifiedDiffResult {
   files: FileDiff[];
   symbols?: OxcFileSymbols[];
+  symbolReferences?: PreprocessedSymbol[];
 }
 
 export class GitService {
@@ -100,9 +119,13 @@ export class GitService {
     // Extract symbols only from the changed files
     const symbols = await this.symbolExtractor.extractFromChangedFiles(sortedFiles, compareBranch);
     
+    // Pre-process symbol references to eliminate frontend processing
+    const symbolReferences = await this.preprocessSymbolReferences(symbols, sortedFiles);
+    
     return { 
       files: sortedFiles,
-      symbols 
+      symbols,
+      symbolReferences
     };
   }
 
@@ -222,6 +245,159 @@ export class GitService {
     }
 
     return fileContents;
+  }
+
+  /**
+   * Pre-process symbol references to eliminate expensive frontend processing
+   */
+  private async preprocessSymbolReferences(
+    symbols: OxcFileSymbols[], 
+    diffFiles: FileDiff[]
+  ): Promise<PreprocessedSymbol[]> {
+    const preprocessedSymbols: PreprocessedSymbol[] = [];
+    
+    // Create a map of all symbols for quick lookup
+    const allSymbols = new Map<string, { filename: string, symbol: any }>();
+    for (const fileSymbols of symbols) {
+      for (const symbol of fileSymbols.symbols) {
+        allSymbols.set(symbol.name, {
+          filename: fileSymbols.filename,
+          symbol
+        });
+      }
+    }
+    
+    // Process each symbol to find its references across all diff files
+    for (const [symbolName, symbolData] of allSymbols) {
+      const references = this.findSymbolReferencesInDiff(symbolName, symbolData.filename, diffFiles);
+      
+      // Only include symbols that have references in the PR (used somewhere)
+      if (references.length > 0) {
+        preprocessedSymbols.push({
+          name: symbolName,
+          filename: symbolData.filename,
+          line: symbolData.symbol.line,
+          type: symbolData.symbol.type,
+          isExported: symbolData.symbol.isExported,
+          className: symbolData.symbol.className,
+          references
+        });
+      }
+    }
+    
+    return preprocessedSymbols;
+  }
+
+  /**
+   * Find symbol references across diff files (backend implementation)
+   */
+  private findSymbolReferencesInDiff(
+    symbolName: string, 
+    definitionFile: string, 
+    diffFiles: FileDiff[]
+  ): SymbolReference[] {
+    const references: SymbolReference[] = [];
+    
+    for (const file of diffFiles) {
+      // Skip the file where the symbol is defined
+      if (file.filename === definitionFile) continue;
+      
+      const language = this.detectLanguageFromFilename(file.filename);
+      if (!this.isHighlightableLanguage(language)) continue;
+      
+      // Search through diff lines for symbol usage
+      for (const line of file.lines) {
+        if (line.isHunkHeader) continue;
+        
+        // Simple symbol detection (can be enhanced with better parsing)
+        if (this.lineContainsSymbol(line.content, symbolName)) {
+          const lineNumber = line.type === 'added' ? line.lineNumber : 
+                           line.type === 'removed' ? line.oldLineNumber : 
+                           line.lineNumber || line.oldLineNumber;
+          
+          references.push({
+            file: file.filename,
+            line: lineNumber || 0,
+            type: line.type as any,
+            context: this.determineUsageContext(line.content, symbolName),
+            content: line.content.trim()
+          });
+        }
+      }
+    }
+    
+    return references;
+  }
+
+  /**
+   * Detect if a line contains a symbol (simple implementation)
+   */
+  private lineContainsSymbol(lineContent: string, symbolName: string): boolean {
+    // Skip comments and strings (basic detection)
+    if (lineContent.trim().startsWith('//') || lineContent.trim().startsWith('*')) {
+      return false;
+    }
+    
+    // Look for symbol as whole word, not part of another identifier
+    const regex = new RegExp(`\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    return regex.test(lineContent);
+  }
+
+  /**
+   * Determine the usage context of a symbol in a line
+   */
+  private determineUsageContext(lineContent: string, symbolName: string): string {
+    const line = lineContent.trim();
+    
+    // Function call pattern
+    if (line.includes(`${symbolName}(`)) {
+      return 'function_call';
+    }
+    
+    // Property access
+    if (line.includes(`.${symbolName}`) || line.includes(`${symbolName}.`)) {
+      return 'property_access';
+    }
+    
+    // Assignment
+    if (line.includes(`= ${symbolName}`) || line.includes(`${symbolName} =`)) {
+      return 'assignment';
+    }
+    
+    // Import/export
+    if (line.includes('import') && line.includes(symbolName)) {
+      return 'import';
+    }
+    
+    if (line.includes('export') && line.includes(symbolName)) {
+      return 'export';
+    }
+    
+    return 'reference';
+  }
+
+  /**
+   * Detect language from filename
+   */
+  private detectLanguageFromFilename(filename: string): string {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'ts':
+      case 'tsx':
+        return 'typescript';
+      case 'js':
+      case 'jsx':
+        return 'javascript';
+      default:
+        return 'text';
+    }
+  }
+
+  /**
+   * Check if language supports highlighting
+   */
+  private isHighlightableLanguage(language: string): boolean {
+    return ['typescript', 'javascript'].includes(language);
   }
 
 }

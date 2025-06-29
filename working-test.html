@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Working Test</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css" rel="stylesheet" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+</head>
+<body>
+    <h1>Working Test - Minimal Diff Viewer</h1>
+    <button onclick="testDiffLoading()">Test Diff Loading</button>
+    <div id="test-container" style="border: 1px solid #ccc; padding: 10px; margin: 10px 0;"></div>
+    
+    <script>
+        async function testDiffLoading() {
+            console.log('🧪 Testing minimal diff loading...');
+            
+            try {
+                // Get diff data
+                const response = await fetch('/api/diff?base=main&compare=feature/auth-improvements&order=bottom-up&repository=backend-service-refactor');
+                const data = await response.json();
+                
+                console.log('✅ Got data:', {
+                    files: data.files?.length,
+                    symbols: data.symbols?.length, 
+                    symbolReferences: data.symbolReferences?.length
+                });
+                
+                // Simple rendering test
+                const container = document.getElementById('test-container');
+                container.innerHTML = '<h3>Test Results:</h3>';
+                
+                // Test 1: Basic file rendering
+                if (data.files && data.files.length > 0) {
+                    const file = data.files[0];
+                    const fileDiv = document.createElement('div');
+                    fileDiv.style.border = '1px solid #ddd';
+                    fileDiv.style.margin = '5px 0';
+                    fileDiv.style.padding = '5px';
+                    
+                    fileDiv.innerHTML = \`
+                        <h4>\${file.filename}</h4>
+                        <div>Lines: \${file.lines?.length}</div>
+                    \`;
+                    
+                    // Test 2: Basic syntax highlighting
+                    if (file.lines && file.lines.length > 0) {
+                        const codeLine = file.lines.find(l => !l.isHunkHeader && l.content.trim());
+                        if (codeLine) {
+                            const codeDiv = document.createElement('div');
+                            codeDiv.style.background = '#f5f5f5';
+                            codeDiv.style.padding = '5px';
+                            codeDiv.style.marginTop = '5px';
+                            
+                            // Test Prism highlighting
+                            if (window.Prism && window.Prism.languages.typescript) {
+                                const highlighted = window.Prism.highlight(
+                                    codeLine.content,
+                                    window.Prism.languages.typescript,
+                                    'typescript'
+                                );
+                                codeDiv.innerHTML = \`<strong>Highlighted code:</strong><br><code>\${highlighted}</code>\`;
+                            } else {
+                                codeDiv.innerHTML = \`<strong>Raw code:</strong><br><code>\${codeLine.content}</code>\`;
+                            }
+                            
+                            fileDiv.appendChild(codeDiv);
+                        }
+                    }
+                    
+                    container.appendChild(fileDiv);
+                }
+                
+                // Test 3: Symbol references
+                if (data.symbolReferences && data.symbolReferences.length > 0) {
+                    const symbolDiv = document.createElement('div');
+                    symbolDiv.style.border = '1px solid #ddd';
+                    symbolDiv.style.margin = '5px 0';
+                    symbolDiv.style.padding = '5px';
+                    
+                    const symbol = data.symbolReferences[0];
+                    symbolDiv.innerHTML = \`
+                        <h4>Sample Symbol: \${symbol.name}</h4>
+                        <div>Type: \${symbol.type}</div>
+                        <div>File: \${symbol.filename}:\${symbol.line}</div>
+                        <div>References: \${symbol.references?.length}</div>
+                    \`;
+                    
+                    if (symbol.references && symbol.references.length > 0) {
+                        const refDiv = document.createElement('div');
+                        refDiv.style.marginTop = '5px';
+                        refDiv.innerHTML = \`<strong>First reference:</strong> \${symbol.references[0].file}:\${symbol.references[0].line} (\${symbol.references[0].context})\`;
+                        symbolDiv.appendChild(refDiv);
+                    }
+                    
+                    container.appendChild(symbolDiv);
+                }
+                
+                console.log('✅ Basic rendering test completed');
+                
+            } catch (error) {
+                console.error('❌ Test failed:', error);
+                document.getElementById('test-container').innerHTML = \`<div style="color: red;">Error: \${error.message}</div>\`;
+            }
+        }
+    </script>
+</body>
+</html>

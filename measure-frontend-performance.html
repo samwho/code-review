@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Performance Test</title>
+</head>
+<body>
+    <script>
+        // Frontend performance measurement script
+        async function measureFrontendPerformance() {
+            console.log('🎯 Frontend Performance Measurement');
+            console.log('===================================\n');
+            
+            // Open the actual app in a new window
+            const appWindow = window.open('http://localhost:3000', 'app', 'width=1200,height=800');
+            
+            // Wait for the app to load
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Inject performance measurement script into the app
+            const measurementScript = `
+                // Performance measurement functions
+                window.performanceMeasurement = {
+                    timings: {},
+                    
+                    startTiming: function(name) {
+                        this.timings[name] = { start: performance.now() };
+                    },
+                    
+                    endTiming: function(name) {
+                        if (this.timings[name]) {
+                            this.timings[name].end = performance.now();
+                            this.timings[name].duration = this.timings[name].end - this.timings[name].start;
+                        }
+                    },
+                    
+                    getResults: function() {
+                        const results = {};
+                        for (const [name, timing] of Object.entries(this.timings)) {
+                            if (timing.duration !== undefined) {
+                                results[name] = timing.duration;
+                            }
+                        }
+                        return results;
+                    }
+                };
+                
+                // Override the original loadDiff method to measure performance
+                if (window.diffViewer) {
+                    const originalLoadDiff = window.diffViewer.loadDiff.bind(window.diffViewer);
+                    const originalRenderDiff = window.diffViewer.renderDiff.bind(window.diffViewer);
+                    const originalAddSymbolTooltips = window.diffViewer.addSymbolTooltips.bind(window.diffViewer);
+                    
+                    window.diffViewer.loadDiff = async function() {
+                        window.performanceMeasurement.startTiming('total_load_diff');
+                        window.performanceMeasurement.startTiming('api_request');
+                        
+                        try {
+                            const result = await originalLoadDiff();
+                            window.performanceMeasurement.endTiming('api_request');
+                            return result;
+                        } catch (error) {
+                            window.performanceMeasurement.endTiming('api_request');
+                            throw error;
+                        }
+                    };
+                    
+                    window.diffViewer.renderDiff = function(diffResult, order) {
+                        window.performanceMeasurement.startTiming('render_diff');
+                        const result = originalRenderDiff(diffResult, order);
+                        window.performanceMeasurement.endTiming('render_diff');
+                        window.performanceMeasurement.endTiming('total_load_diff');
+                        
+                        // Log results after rendering
+                        setTimeout(() => {
+                            console.log('📊 Performance Results:');
+                            const results = window.performanceMeasurement.getResults();
+                            for (const [name, duration] of Object.entries(results)) {
+                                console.log(\`  \${name}: \${duration.toFixed(2)}ms\`);
+                            }
+                        }, 100);
+                        
+                        return result;
+                    };
+                    
+                    window.diffViewer.addSymbolTooltips = function(contentCell, currentFile) {
+                        window.performanceMeasurement.startTiming('symbol_processing');
+                        const result = originalAddSymbolTooltips(contentCell, currentFile);
+                        window.performanceMeasurement.endTiming('symbol_processing');
+                        return result;
+                    };
+                } else {
+                    // If diffViewer isn't ready, wait and try again
+                    setTimeout(() => {
+                        if (window.diffViewer) {
+                            location.reload();
+                        }
+                    }, 1000);
+                }
+                
+                console.log('Performance measurement injected. Load a diff to see results.');
+            `;
+            
+            try {
+                appWindow.eval(measurementScript);
+                console.log('✅ Performance measurement script injected');
+                console.log('📝 Instructions:');
+                console.log('1. Select backend-service-refactor repository');
+                console.log('2. Choose main vs feature/auth-improvements');
+                console.log('3. Set order to bottom-up');
+                console.log('4. Click "Load Diff"');
+                console.log('5. Check browser console for performance results');
+            } catch (error) {
+                console.error('❌ Failed to inject performance script:', error);
+                console.log('📝 Manual measurement:');
+                console.log('1. Open browser dev tools (F12)');
+                console.log('2. Go to Performance tab');
+                console.log('3. Start recording');
+                console.log('4. Load a diff in the app');
+                console.log('5. Stop recording and analyze');
+            }
+        }
+        
+        // Auto-start the measurement
+        measureFrontendPerformance();
+    </script>
+    
+    <h1>Frontend Performance Measurement</h1>
+    <p>This page will inject performance measurement into the main app.</p>
+    <p>Check the console for instructions and results.</p>
+</body>
+</html>

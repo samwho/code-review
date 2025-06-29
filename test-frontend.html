@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Test</title>
+</head>
+<body>
+    <script>
+        // Test frontend functionality
+        async function testFrontend() {
+            console.log('🧪 Testing frontend functionality...');
+            
+            // Open the app
+            const appWindow = window.open('http://localhost:3000', 'test', 'width=1200,height=800');
+            
+            // Wait for it to load
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            
+            try {
+                // Test if basic elements exist
+                const hasRepo = appWindow.document.getElementById('repository');
+                const hasLoadButton = appWindow.document.getElementById('load-diff');
+                const hasDiffContainer = appWindow.document.getElementById('diff-container');
+                
+                console.log('✅ Repository selector:', hasRepo ? 'Found' : 'Missing');
+                console.log('✅ Load button:', hasLoadButton ? 'Found' : 'Missing');
+                console.log('✅ Diff container:', hasDiffContainer ? 'Found' : 'Missing');
+                
+                if (hasRepo && hasLoadButton) {
+                    // Set to backend-service-refactor and try to load
+                    hasRepo.value = 'backend-service-refactor';
+                    
+                    // Trigger change event
+                    hasRepo.dispatchEvent(new Event('change'));
+                    
+                    // Wait a bit then click load
+                    setTimeout(() => {
+                        console.log('🔄 Clicking load diff...');
+                        hasLoadButton.click();
+                        
+                        // Check for errors in console
+                        setTimeout(() => {
+                            console.log('📊 Check the main app window for results');
+                        }, 5000);
+                    }, 2000);
+                } else {
+                    console.error('❌ Required elements not found');
+                }
+            } catch (error) {
+                console.error('❌ Error testing frontend:', error);
+            }
+        }
+        
+        testFrontend();
+    </script>
+    
+    <h1>Frontend Test</h1>
+    <p>Check console and the opened app window for results.</p>
+</body>
+</html>

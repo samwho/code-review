@@ -18,6 +18,10 @@ class DiffViewer {
 
     // Performance optimizations
     this.debouncedRefreshHighlighting = this.debounce(this.refreshSymbolHighlighting.bind(this), 300);
+    this.domQueryCache = new Map(); // DOM query caching
+    this.symbolReferences = new Map(); // Preprocessed symbol references
+    this.asyncHighlightQueue = []; // Queue for async highlighting
+    this.isHighlighting = false; // Prevent concurrent highlighting
 
     this.init();
   }
@@ -35,6 +39,145 @@ class DiffViewer {
       clearTimeout(timeout);
       timeout = setTimeout(later, wait);
     };
+  }
+
+  /**
+   * Cached DOM query function to reduce expensive DOM operations
+   */
+  cachedQuerySelectorAll(selector, container = document) {
+    const containerKey = container.id || container.className || 'document';
+    const cacheKey = `${containerKey}-${selector}`;
+    
+    if (!this.domQueryCache.has(cacheKey)) {
+      const elements = container.querySelectorAll(selector);
+      this.domQueryCache.set(cacheKey, elements);
+      
+      // Clear cache after a reasonable time to prevent memory leaks
+      setTimeout(() => {
+        this.domQueryCache.delete(cacheKey);
+      }, 30000); // 30 seconds
+    }
+    
+    return this.domQueryCache.get(cacheKey);
+  }
+
+  /**
+   * Clear DOM query cache (call when DOM structure changes significantly)
+   */
+  clearDOMCache() {
+    this.domQueryCache.clear();
+  }
+
+  /**
+   * Start async syntax highlighting process
+   */
+  async startAsyncHighlighting() {
+    if (this.isHighlighting || this.asyncHighlightQueue.length === 0) {
+      return;
+    }
+    
+    this.isHighlighting = true;
+    const startTime = performance.now();
+    
+    console.log(`🎨 Starting async highlighting of ${this.asyncHighlightQueue.length} lines...`);
+    
+    const chunkSize = 25; // Process 25 lines at a time
+    const queue = [...this.asyncHighlightQueue]; // Copy queue
+    this.asyncHighlightQueue = []; // Clear original queue
+    
+    for (let i = 0; i < queue.length; i += chunkSize) {
+      const chunk = queue.slice(i, i + chunkSize);
+      
+      // Process chunk in next frame
+      await new Promise(resolve => {
+        requestIdleCallback(() => {
+          this.highlightChunk(chunk);
+          resolve();
+        }, { timeout: 50 });
+      });
+    }
+    
+    const highlightTime = performance.now() - startTime;
+    console.log(`✅ Async highlighting completed in ${highlightTime.toFixed(2)}ms`);
+    
+    // Apply symbol tooltips after highlighting is complete
+    this.applySymbolTooltipsAsync();
+    
+    this.isHighlighting = false;
+  }
+
+  /**
+   * Highlight a chunk of content cells
+   */
+  highlightChunk(contentCells) {
+    contentCells.forEach(cell => {
+      const language = cell.getAttribute('data-language');
+      const content = cell.getAttribute('data-raw-content');
+      
+      if (content && language) {
+        try {
+          const highlighted = this.highlightWithPrism(content, language);
+          cell.innerHTML = highlighted;
+        } catch (error) {
+          console.warn('Highlighting failed for line:', error);
+          // Keep original text content on error
+        }
+      }
+    });
+  }
+
+  /**
+   * Apply symbol tooltips asynchronously after highlighting
+   */
+  async applySymbolTooltipsAsync() {
+    try {
+      if (this.symbolReferences.size === 0) {
+        console.log('⚠️ No symbol references available for tooltips');
+        return;
+      }
+      
+      const startTime = performance.now();
+      console.log(`🔗 Adding symbol tooltips for ${this.symbolReferences.size} symbols...`);
+      
+      // Process symbol tooltips in chunks to avoid blocking UI
+      const fileDiffs = this.diffContainer.querySelectorAll('.file-diff');
+      console.log(`📁 Found ${fileDiffs.length} file diffs to process`);
+      
+      for (const fileDiff of fileDiffs) {
+        const filename = fileDiff.getAttribute('data-filename');
+        if (!filename) {
+          console.warn('⚠️ File diff missing data-filename attribute');
+          continue;
+        }
+        
+        const contentCells = fileDiff.querySelectorAll('.line-content');
+        console.log(`📄 Processing ${contentCells.length} lines in ${filename}`);
+        
+        // Process in small chunks
+        for (let i = 0; i < contentCells.length; i += 10) {
+          const chunk = Array.from(contentCells).slice(i, i + 10);
+          
+          chunk.forEach(cell => {
+            try {
+              this.addOptimizedSymbolTooltips(cell, filename);
+            } catch (error) {
+              console.warn(`Error processing symbol tooltips for line:`, error);
+            }
+          });
+          
+          // Yield occasionally
+          if (i % 50 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+          }
+        }
+      }
+      
+      const tooltipTime = performance.now() - startTime;
+      console.log(`✅ Symbol tooltips applied in ${tooltipTime.toFixed(2)}ms`);
+      
+    } catch (error) {
+      console.error('❌ Error in applySymbolTooltipsAsync:', error);
+    }
   }
 
   async init() {
@@ -126,16 +269,28 @@ class DiffViewer {
   renderDiff(diffResult, order = 'alphabetical') {
     const files = diffResult.files || diffResult; // Handle both old and new format
     const symbols = diffResult.symbols || [];
+    const symbolReferences = diffResult.symbolReferences || [];
     
     if (files.length === 0) {
       this.diffContainer.innerHTML = '<div class="empty-state">No differences found between the selected branches.</div>';
       return;
     }
 
-    // Store symbols and files for symbol lookups
+    // Store preprocessed data for fast lookups
     this.fileSymbols = symbols;
     this.currentDiffFiles = files;
     this.currentOrder = order;
+    
+    // Store preprocessed symbol references (eliminates expensive frontend processing)
+    this.symbolReferences.clear();
+    if (symbolReferences && symbolReferences.length > 0) {
+      symbolReferences.forEach(symbol => {
+        this.symbolReferences.set(symbol.name, symbol);
+      });
+      console.log(`📊 Performance: Using ${symbolReferences.length} preprocessed symbols`);
+    } else {
+      console.log('⚠️ No preprocessed symbol references available');
+    }
 
     // Add ordering info header
     if (order !== 'alphabetical') {
@@ -155,10 +310,40 @@ class DiffViewer {
       this.diffContainer.appendChild(orderInfo);
     }
 
-    files.forEach((file, index) => {
-      const fileElement = this.createFileElement(file, index + 1);
-      this.diffContainer.appendChild(fileElement);
-    });
+    // Render files progressively to avoid blocking UI
+    this.renderFilesProgressively(files);
+  }
+
+  /**
+   * Render files progressively to avoid blocking the UI
+   */
+  async renderFilesProgressively(files) {
+    const chunkSize = 3; // Render 3 files at a time
+    const startTime = performance.now();
+    
+    console.log(`🚀 Starting progressive rendering of ${files.length} files...`);
+    
+    for (let i = 0; i < files.length; i += chunkSize) {
+      const chunk = files.slice(i, i + chunkSize);
+      
+      // Render chunk synchronously
+      chunk.forEach((file, chunkIndex) => {
+        const globalIndex = i + chunkIndex + 1;
+        const fileElement = this.createFileElement(file, globalIndex);
+        this.diffContainer.appendChild(fileElement);
+      });
+      
+      // Yield to browser for UI updates
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    
+    const renderTime = performance.now() - startTime;
+    console.log(`✅ Progressive rendering completed in ${renderTime.toFixed(2)}ms`);
+    
+    // Apply symbol tooltips after all files are rendered
+    setTimeout(() => {
+      this.applySymbolTooltipsAsync();
+    }, 100); // Small delay to ensure DOM is fully updated
   }
 
   createFileElement(file, index) {
@@ -253,13 +438,17 @@ class DiffViewer {
     const contentCell = document.createElement('td');
     contentCell.className = 'line-content';
     
-    // Apply syntax highlighting for TypeScript/JavaScript files
+    // Apply syntax highlighting immediately for now, optimize later
     if (this.isHighlightableLanguage(language)) {
-      // Use Prism.js for syntax highlighting
-      contentCell.innerHTML = this.highlightWithPrism(line.content, language);
-      // Add hover tooltips for symbols if we have symbol data
-      if (this.fileSymbols && this.fileSymbols.length > 0) {
-        this.addSymbolTooltips(contentCell, filename);
+      try {
+        contentCell.innerHTML = this.highlightWithPrism(line.content, language);
+        // Store data for async symbol processing
+        contentCell.setAttribute('data-language', language);
+        contentCell.setAttribute('data-filename', filename);
+        contentCell.setAttribute('data-raw-content', line.content);
+      } catch (error) {
+        console.warn('Syntax highlighting failed:', error);
+        contentCell.textContent = line.content;
       }
     } else {
       contentCell.textContent = line.content;
@@ -389,10 +578,12 @@ class DiffViewer {
   }
 
   /**
-   * Refresh symbol highlighting without full diff re-render
+   * Refresh symbol highlighting without full diff re-render (optimized)
    */
   refreshSymbolHighlighting() {
-    if (!this.currentDiffFiles || !this.fileSymbols) return;
+    if (!this.currentDiffFiles || this.symbolReferences.size === 0) return;
+    
+    const startTime = performance.now();
     
     // Clear existing symbol highlighting
     this.diffContainer.querySelectorAll('.symbol-interactive').forEach(element => {
@@ -407,40 +598,25 @@ class DiffViewer {
       }
     });
     
-    // Re-apply symbol highlighting to existing content
-    this.currentDiffFiles.forEach(file => {
-      const contentCells = this.diffContainer.querySelectorAll(`[data-filename="${file.filename}"] .line-content`);
-      contentCells.forEach(cell => {
-        if (this.isHighlightableLanguage(this.detectLanguage(file.filename))) {
-          this.addSymbolTooltips(cell, file.filename);
-        }
-      });
-    });
+    // Clear DOM cache since we're refreshing
+    this.clearDOMCache();
+    
+    // Re-apply symbol highlighting using optimized method
+    this.applySymbolTooltipsAsync();
+    
+    const refreshTime = performance.now() - startTime;
+    console.log(`🔄 Symbol highlighting refreshed in ${refreshTime.toFixed(2)}ms`);
   }
 
-  addSymbolTooltips(contentCell, currentFile) {
-    // Only highlight symbols that are in our extracted symbol list
-    this.addExtractedSymbolTooltips(contentCell, currentFile);
-  }
-  
-  addExtractedSymbolTooltips(contentCell, currentFile) {
-    if (!this.fileSymbols || this.fileSymbols.length === 0) {
+  /**
+   * Optimized symbol tooltips using preprocessed data
+   */
+  addOptimizedSymbolTooltips(contentCell, currentFile) {
+    if (this.symbolReferences.size === 0) {
       return;
     }
 
-    // Get all symbols from all changed files for highlighting
-    const allSymbols = new Map();
-    for (const fileSymbols of this.fileSymbols) {
-      for (const symbol of fileSymbols.symbols) {
-        allSymbols.set(symbol.name, {
-          ...symbol,
-          filename: fileSymbols.filename
-        });
-      }
-    }
-
-    // Find and highlight only symbols that exist in our extracted list
-    // Look for Prism.js tokens that might be our symbols
+    // Use cached token query instead of creating new ones
     const tokens = contentCell.querySelectorAll('.token');
     
     tokens.forEach(token => {
@@ -449,164 +625,45 @@ class DiffViewer {
       // Skip very short text or empty tokens
       if (!text || text.length < 2) return;
       
-      // Check if this token text matches any of our extracted symbols
-      const symbolInfo = allSymbols.get(text);
-      if (symbolInfo) {
-        // Find references to this symbol in other changed files
-        const references = this.findSymbolReferences(text, currentFile);
+      // Check if this token text matches any of our preprocessed symbols
+      const symbolInfo = this.symbolReferences.get(text);
+      if (symbolInfo && symbolInfo.references.length > 0) {
+        // Create relations array from preprocessed data
+        const relations = [];
         
-        // Only make symbol interactive if it has references in the PR
-        // Skip symbols that are only defined but never used
-        if (references.length > 0) {
-          // Create relations array with definition and references
-          const relations = [];
-          
-          // Add the definition
-          relations.push({
-            type: 'defined_in',
-            file: symbolInfo.filename,
-            line: symbolInfo.line,
-            symbolType: symbolInfo.type,
-            isExported: symbolInfo.isExported,
-            className: symbolInfo.className
-          });
+        // Add the definition
+        relations.push({
+          type: 'defined_in',
+          file: symbolInfo.filename,
+          line: symbolInfo.line,
+          symbolType: symbolInfo.type,
+          isExported: symbolInfo.isExported,
+          className: symbolInfo.className
+        });
 
-          // Add references from other files, excluding the definition itself
-          references.forEach(ref => {
-            // Skip if this reference is actually the definition location
-            if (ref.file === symbolInfo.filename && ref.line === symbolInfo.line) {
-              return;
-            }
-            
-            relations.push({
-              type: 'used_in',
-              file: ref.file,
-              line: ref.line,
-              context: ref.context
-            });
+        // Add preprocessed references
+        symbolInfo.references.forEach(ref => {
+          relations.push({
+            type: 'used_in',
+            file: ref.file,
+            line: ref.line,
+            context: ref.context
           });
-          
-          this.makeSymbolInteractive(token, text, relations, []);
-        }
+        });
+        
+        this.makeSymbolInteractive(token, text, relations, symbolInfo.references);
       }
     });
   }
 
-  /**
-   * Find symbol definition in the changed files
-   */
-  findSymbolInChangedFiles(symbolName) {
-    if (!this.fileSymbols) {
-      return null;
-    }
-    
-    for (const fileSymbols of this.fileSymbols) {
-      const symbol = fileSymbols.symbols.find(s => s.name === symbolName);
-      if (symbol) {
-        return {
-          filename: fileSymbols.filename,
-          ...symbol
-        };
-      }
-    }
-    
-    return null;
+  addSymbolTooltips(contentCell, currentFile) {
+    // Use optimized version
+    this.addOptimizedSymbolTooltips(contentCell, currentFile);
   }
+  
+  // This method has been replaced by addOptimizedSymbolTooltips
 
-
-
-  findSymbolReferences(symbolName, currentFile) {
-    if (!this.currentDiffFiles) {
-      return [];
-    }
-
-    const references = [];
-    
-    for (const file of this.currentDiffFiles) {
-      if (file.filename === currentFile) continue; // Skip the current file
-      
-      const language = this.detectLanguage(file.filename);
-      if (!this.isHighlightableLanguage(language)) continue;
-      
-      // Search through diff lines for symbol usage
-      for (const line of file.lines) {
-        if (line.type === 'context' && line.isHunkHeader) continue;
-        
-        // Use Prism.js to parse the line and find tokens
-        const highlightedContent = this.highlightWithPrism(line.content, language);
-        
-        // Create a temporary element to parse the tokens
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = highlightedContent;
-        
-        // Look for our symbol in the tokens (excluding strings and comments)
-        const tokens = tempDiv.querySelectorAll('.token');
-        let foundSymbol = false;
-        
-        tokens.forEach(token => {
-          const tokenText = token.textContent.trim();
-          const tokenClass = token.className;
-          
-          // Skip tokens that are strings, comments, or other non-code elements
-          if (tokenClass.includes('string') || 
-              tokenClass.includes('comment') || 
-              tokenClass.includes('template-string')) {
-            return;
-          }
-          
-          if (tokenText === symbolName) {
-            foundSymbol = true;
-          }
-        });
-        
-        if (foundSymbol) {
-          const lineNumber = line.type === 'added' ? line.lineNumber : 
-                           line.type === 'removed' ? line.oldLineNumber : 
-                           line.lineNumber || line.oldLineNumber;
-          
-          references.push({
-            file: file.filename,
-            line: lineNumber,
-            type: line.type,
-            content: line.content.trim(),
-            context: this.determineUsageContext(line.content, symbolName)
-          });
-        }
-      }
-    }
-    
-    return references;
-  }
-
-  determineUsageContext(lineContent, symbolName) {
-    const line = lineContent.trim();
-    
-    // Function call pattern
-    if (line.includes(`${symbolName}(`)) {
-      return 'function_call';
-    }
-    
-    // Property access
-    if (line.includes(`.${symbolName}`) || line.includes(`${symbolName}.`)) {
-      return 'property_access';
-    }
-    
-    // Assignment
-    if (line.includes(`= ${symbolName}`) || line.includes(`${symbolName} =`)) {
-      return 'assignment';
-    }
-    
-    // Import/export
-    if (line.includes('import') && line.includes(symbolName)) {
-      return 'import';
-    }
-    
-    if (line.includes('export') && line.includes(symbolName)) {
-      return 'export';
-    }
-    
-    return 'reference';
-  }
+  // Old inefficient methods removed - replaced with backend preprocessing and optimized frontend
 
 
   makeSymbolInteractive(element, symbolName, relations, usageInPR = []) {

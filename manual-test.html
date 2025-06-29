@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Manual Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .log { background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 4px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        button { padding: 10px 20px; margin: 5px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #1565c0; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Manual Frontend Test</h1>
+    <p>This will test the diff loading functionality step by step.</p>
+    
+    <button onclick="testStep1()">Step 1: Test API</button>
+    <button onclick="testStep2()">Step 2: Test Frontend Components</button>
+    <button onclick="testStep3()">Step 3: Test Full Flow</button>
+    <button onclick="clearLogs()">Clear Logs</button>
+    
+    <div id="logs"></div>
+    
+    <script>
+        function log(message, type = 'log') {
+            const div = document.createElement('div');
+            div.className = `log ${type}`;
+            div.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            document.getElementById('logs').appendChild(div);
+            console.log(message);
+        }
+        
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '';
+        }
+        
+        async function testStep1() {
+            log('🔧 Testing backend API...', 'log');
+            
+            try {
+                const response = await fetch('/api/diff?base=main&compare=feature/auth-improvements&order=bottom-up&repository=backend-service-refactor');
+                const data = await response.json();
+                
+                log(\`✅ API works! Files: \${data.files?.length}, Symbols: \${data.symbols?.length}, Preprocessed: \${data.symbolReferences?.length}\`, 'success');
+                
+                // Test specific data structure
+                if (data.files && data.files.length > 0) {
+                    const file = data.files[0];
+                    log(\`📁 First file: \${file.filename} (\${file.lines?.length} lines)\`, 'log');
+                }
+                
+                if (data.symbolReferences && data.symbolReferences.length > 0) {
+                    const symbol = data.symbolReferences[0];
+                    log(\`🔗 First symbol: \${symbol.name} in \${symbol.filename} (\${symbol.references?.length} refs)\`, 'log');
+                }
+                
+            } catch (error) {
+                log(\`❌ API test failed: \${error.message}\`, 'error');
+            }
+        }
+        
+        async function testStep2() {
+            log('🎨 Testing frontend components...', 'log');
+            
+            try {
+                // Check if DiffViewer class exists
+                if (typeof DiffViewer === 'undefined') {
+                    log('❌ DiffViewer class not found - loading app.js...', 'error');
+                    
+                    // Load the app.js script
+                    const script = document.createElement('script');
+                    script.src = '/app.js';
+                    script.type = 'module';
+                    document.head.appendChild(script);
+                    
+                    // Wait a bit
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                // Test creating a DiffViewer instance
+                const diffViewer = new DiffViewer();
+                log('✅ DiffViewer instance created successfully', 'success');
+                
+                // Test if required methods exist
+                const methods = ['renderDiff', 'highlightWithPrism', 'addOptimizedSymbolTooltips'];
+                methods.forEach(method => {
+                    if (typeof diffViewer[method] === 'function') {
+                        log(\`✅ Method \${method} exists\`, 'success');
+                    } else {
+                        log(\`❌ Method \${method} missing\`, 'error');
+                    }
+                });
+                
+            } catch (error) {
+                log(\`❌ Frontend component test failed: \${error.message}\`, 'error');
+            }
+        }
+        
+        async function testStep3() {
+            log('🚀 Testing full diff loading flow...', 'log');
+            
+            try {
+                // Get API data
+                const response = await fetch('/api/diff?base=main&compare=feature/auth-improvements&order=bottom-up&repository=backend-service-refactor');
+                const diffData = await response.json();
+                
+                // Create a minimal diff viewer test
+                const diffViewer = new DiffViewer();
+                
+                // Create a temporary container
+                const container = document.createElement('div');
+                container.id = 'test-diff-container';
+                container.style.border = '1px solid #ccc';
+                container.style.padding = '10px';
+                container.style.margin = '10px 0';
+                container.style.maxHeight = '300px';
+                container.style.overflow = 'auto';
+                document.body.appendChild(container);
+                
+                // Override the diffContainer
+                diffViewer.diffContainer = container;
+                
+                // Test rendering
+                log('📄 Attempting to render diff...', 'log');
+                diffViewer.renderDiff(diffData, 'bottom-up');
+                
+                // Check results
+                const fileElements = container.querySelectorAll('.file-diff');
+                log(\`✅ Rendered \${fileElements.length} file elements\`, 'success');
+                
+                const codeLines = container.querySelectorAll('.line-content');
+                log(\`✅ Rendered \${codeLines.length} code lines\`, 'success');
+                
+                // Check for syntax highlighting
+                const highlightedLines = container.querySelectorAll('.line-content .token');
+                log(\`✅ Found \${highlightedLines.length} syntax-highlighted tokens\`, 'success');
+                
+                // Check for symbol tooltips
+                setTimeout(() => {
+                    const interactiveSymbols = container.querySelectorAll('.symbol-interactive');
+                    log(\`✅ Found \${interactiveSymbols.length} interactive symbols\`, 'success');
+                    
+                    if (interactiveSymbols.length === 0) {
+                        log('⚠️ No interactive symbols found - symbol highlighting may not be working', 'error');
+                    }
+                }, 2000);
+                
+            } catch (error) {
+                log(\`❌ Full flow test failed: \${error.message}\`, 'error');
+                console.error('Full error:', error);
+            }
+        }
+    </script>
+</body>
+</html>
