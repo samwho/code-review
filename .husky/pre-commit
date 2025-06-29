@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run lint-staged
+bun run lint-staged
+
+# Run tests to ensure code is correct
+echo "🧪 Running tests..."
+bun test --timeout 30000
+
+# Check if tests passed
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed! Commit blocked."
+  exit 1
+fi
+
+echo "✅ All checks passed!"
