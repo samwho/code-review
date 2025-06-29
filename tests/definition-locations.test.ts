@@ -64,7 +64,7 @@ class LocationTestRepoBuilder {
     try {
       rmSync(this.tempDir, { recursive: true, force: true });
     } catch (error) {
-      console.warn(`Failed to cleanup ${this.tempDir}:`, error);
+      // Failed to cleanup test directory
     }
   }
 }
@@ -81,8 +81,10 @@ function createLocationTestRepo(testName: string): LocationTestRepoBuilder {
 afterEach(() => {
   // Clean up all repos created during tests
   while (activeLocationRepos.length > 0) {
-    const repo = activeLocationRepos.pop()!;
-    repo.cleanup();
+    const repo = activeLocationRepos.pop();
+    if (repo) {
+      repo.cleanup();
+    }
   }
 });
 
@@ -213,23 +215,23 @@ interface User {
   const oxcFileSymbols = oxcSymbols[0];
 
   // Test UserService class line number
-  const oxcUserService = oxcFileSymbols!.symbols.find((s) => s.name === 'UserService');
+  const oxcUserService = oxcFileSymbols?.symbols.find((s) => s.name === 'UserService');
   expect(oxcUserService?.line).toBe(expectedLines.get('UserService') ?? 0);
 
   // Test createUser method line number
-  const oxcCreateUser = oxcFileSymbols!.symbols.find((s) => s.name === 'createUser');
+  const oxcCreateUser = oxcFileSymbols?.symbols.find((s) => s.name === 'createUser');
   expect(oxcCreateUser?.line).toBe(expectedLines.get('createUser') ?? 0);
 
   // Test generateId function line number
-  const oxcGenerateId = oxcFileSymbols!.symbols.find((s) => s.name === 'generateId');
+  const oxcGenerateId = oxcFileSymbols?.symbols.find((s) => s.name === 'generateId');
   expect(oxcGenerateId?.line).toBe(expectedLines.get('generateId') ?? 0);
 
   // Test interface line number
-  const oxcUser = oxcFileSymbols!.symbols.find((s) => s.name === 'User');
+  const oxcUser = oxcFileSymbols?.symbols.find((s) => s.name === 'User');
   expect(oxcUser?.line).toBe(expectedLines.get('User') ?? 0);
 
   // Verify all symbols have valid line numbers
-  for (const symbol of oxcFileSymbols!.symbols) {
+  for (const symbol of oxcFileSymbols?.symbols || []) {
     expect(symbol.line).toBeGreaterThan(0);
   }
 });
@@ -335,20 +337,20 @@ export class
   const oxcFileSymbols = oxcSymbols[0];
 
   // Test ComplexService class
-  const oxcComplexService = oxcFileSymbols!.symbols.find((s) => s.name === 'ComplexService');
+  const oxcComplexService = oxcFileSymbols?.symbols.find((s) => s.name === 'ComplexService');
   expect(oxcComplexService?.line).toBe(1); // Class should be on line 1
 
   // Test multiline method
-  const oxcProcessData = oxcFileSymbols!.symbols.find((s) => s.name === 'processData');
+  const oxcProcessData = oxcFileSymbols?.symbols.find((s) => s.name === 'processData');
   // The method declaration starts on line 4
   expect(oxcProcessData?.line).toBe(4);
 
   // Test multiline arrow function
-  const oxcMultiLineArrow = oxcFileSymbols!.symbols.find((s) => s.name === 'multiLineArrow');
+  const oxcMultiLineArrow = oxcFileSymbols?.symbols.find((s) => s.name === 'multiLineArrow');
   expect(oxcMultiLineArrow?.line).toBe(expectedLines.get('multiLineArrow') ?? 0);
 
   // Verify all symbols have valid line numbers
-  for (const symbol of oxcFileSymbols!.symbols) {
+  for (const symbol of oxcFileSymbols?.symbols || []) {
     expect(symbol.line).toBeGreaterThan(0);
   }
 });
@@ -430,19 +432,19 @@ class SecondClass {
   const anotherMethodLine = lines.findIndex((line) => line.trim().startsWith('anotherMethod(')) + 1;
 
   // Test EmptyLinesService class
-  const oxcEmptyLinesService = oxcFileSymbols!.symbols.find((s) => s.name === 'EmptyLinesService');
+  const oxcEmptyLinesService = oxcFileSymbols?.symbols.find((s) => s.name === 'EmptyLinesService');
   expect(oxcEmptyLinesService?.line).toBe(emptyLinesServiceLine);
 
   // Test processData method
-  const oxcProcessData = oxcFileSymbols!.symbols.find((s) => s.name === 'processData');
+  const oxcProcessData = oxcFileSymbols?.symbols.find((s) => s.name === 'processData');
   expect(oxcProcessData?.line).toBe(processDataLine);
 
   // Test anotherMethod (multiline declaration with empty lines)
-  const oxcAnotherMethod = oxcFileSymbols!.symbols.find((s) => s.name === 'anotherMethod');
+  const oxcAnotherMethod = oxcFileSymbols?.symbols.find((s) => s.name === 'anotherMethod');
   expect(oxcAnotherMethod?.line).toBe(anotherMethodLine);
 
   // Verify all symbols have valid line numbers
-  for (const symbol of oxcFileSymbols!.symbols) {
+  for (const symbol of oxcFileSymbols?.symbols || []) {
     expect(symbol.line).toBeGreaterThan(0);
   }
 });
@@ -562,33 +564,33 @@ export const isValidEmail = (email: string): boolean => {
     lines.findIndex((line) => line.includes('export const isValidEmail')) + 1;
 
   // Test UserService class
-  const oxcUserService = oxcFileSymbols!.symbols.find((s) => s.name === 'UserService');
+  const oxcUserService = oxcFileSymbols?.symbols.find((s) => s.name === 'UserService');
   expect(oxcUserService?.line).toBe(userServiceLine);
 
   // Test createUser method
-  const oxcCreateUser = oxcFileSymbols!.symbols.find((s) => s.name === 'createUser');
+  const oxcCreateUser = oxcFileSymbols?.symbols.find((s) => s.name === 'createUser');
   expect(oxcCreateUser?.line).toBe(createUserLine);
 
   // Test validateUser private method
-  const oxcValidateUser = oxcFileSymbols!.symbols.find((s) => s.name === 'validateUser');
+  const oxcValidateUser = oxcFileSymbols?.symbols.find((s) => s.name === 'validateUser');
   expect(oxcValidateUser?.line).toBe(validateUserLine);
 
   // Test standalone function
-  const oxcFormatUserName = oxcFileSymbols!.symbols.find((s) => s.name === 'formatUserName');
+  const oxcFormatUserName = oxcFileSymbols?.symbols.find((s) => s.name === 'formatUserName');
   expect(oxcFormatUserName?.line).toBe(formatUserNameLine);
 
   // Test arrow function
-  const oxcIsValidEmail = oxcFileSymbols!.symbols.find((s) => s.name === 'isValidEmail');
+  const oxcIsValidEmail = oxcFileSymbols?.symbols.find((s) => s.name === 'isValidEmail');
   expect(oxcIsValidEmail?.line).toBe(isValidEmailLine);
 
   // Print out symbols for debugging
   console.log('OXC extractor symbols:');
-  oxcFileSymbols!.symbols.forEach((s) => {
+  for (const s of oxcFileSymbols?.symbols || []) {
     console.log(`  ${s.name}: line ${s.line} (${s.type})`);
-  });
+  }
 
   // Verify all symbols have valid line numbers
-  for (const symbol of oxcFileSymbols!.symbols) {
+  for (const symbol of oxcFileSymbols?.symbols || []) {
     expect(symbol.line).toBeGreaterThan(0);
   }
 });
@@ -637,14 +639,14 @@ export function testFunction(): void {
   const oxcFileSymbols = oxcSymbols[0];
 
   // Check that NO symbols have line number 0
-  for (const symbol of oxcFileSymbols!.symbols) {
+  for (const symbol of oxcFileSymbols?.symbols || []) {
     expect(symbol.line).toBeGreaterThan(0);
   }
 
   // All line numbers should be reasonable (within the file)
   const lineCount = testContent.split('\n').length;
 
-  for (const symbol of oxcFileSymbols!.symbols) {
+  for (const symbol of oxcFileSymbols?.symbols || []) {
     expect(symbol.line).toBeLessThanOrEqual(lineCount);
   }
 });

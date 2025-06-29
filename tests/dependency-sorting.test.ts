@@ -72,7 +72,7 @@ class TestRepoBuilder {
     try {
       rmSync(this.tempDir, { recursive: true, force: true });
     } catch (error) {
-      console.warn(`Failed to cleanup ${this.tempDir}:`, error);
+      // Failed to cleanup test directory
     }
   }
 }
@@ -89,8 +89,10 @@ function createTestRepo(testName: string): TestRepoBuilder {
 afterEach(() => {
   // Clean up all repos created during tests
   while (activeRepos.length > 0) {
-    const repo = activeRepos.pop()!;
-    repo.cleanup();
+    const repo = activeRepos.pop();
+    if (repo) {
+      repo.cleanup();
+    }
   }
 });
 
@@ -212,12 +214,14 @@ export class C {
 
   // Verify symbols are extracted
   expect(alphabetical.symbols).toBeDefined();
-  expect(alphabetical.symbols!).toHaveLength(3);
+  expect(alphabetical.symbols).toHaveLength(3);
 
-  const symbolsByFile = new Map(alphabetical.symbols!.map((fs) => [fs.filename, fs.symbols]));
+  const symbolsByFile = new Map(alphabetical.symbols?.map((fs) => [fs.filename, fs.symbols]) || []);
 
   // Verify class A and its method
-  const aSymbols = symbolsByFile.get('src/a.ts')!;
+  const aSymbols = symbolsByFile.get('src/a.ts');
+  expect(aSymbols).toBeDefined();
+  if (!aSymbols) return;
   expect(aSymbols).toHaveLength(2);
   expect(aSymbols.find((s) => s.type === 'class')).toEqual({
     name: 'A',
@@ -234,7 +238,9 @@ export class C {
   });
 
   // Verify class B and its method
-  const bSymbols = symbolsByFile.get('src/b.ts')!;
+  const bSymbols = symbolsByFile.get('src/b.ts');
+  expect(bSymbols).toBeDefined();
+  if (!bSymbols) return;
   expect(bSymbols).toHaveLength(2);
   expect(bSymbols.find((s) => s.type === 'class')).toEqual({
     name: 'B',
@@ -251,7 +257,9 @@ export class C {
   });
 
   // Verify class C and its method
-  const cSymbols = symbolsByFile.get('src/c.ts')!;
+  const cSymbols = symbolsByFile.get('src/c.ts');
+  expect(cSymbols).toBeDefined();
+  if (!cSymbols) return;
   expect(cSymbols).toHaveLength(2);
   expect(cSymbols.find((s) => s.type === 'class')).toEqual({
     name: 'C',
@@ -765,12 +773,14 @@ export const validateStatus = (status: string): status is Status => {
   expect(result.files).toHaveLength(2);
   expect(result.symbols).toBeDefined();
 
-  expect(result.symbols!).toHaveLength(2);
+  expect(result.symbols).toHaveLength(2);
 
   // Verify symbols are extracted correctly for different types
-  const symbolsByFile = new Map(result.symbols!.map((fs) => [fs.filename, fs.symbols]));
+  const symbolsByFile = new Map(result.symbols?.map((fs) => [fs.filename, fs.symbols]) || []);
 
-  const typesSymbols = symbolsByFile.get('src/types.ts')!;
+  const typesSymbols = symbolsByFile.get('src/types.ts');
+  expect(typesSymbols).toBeDefined();
+  if (!typesSymbols) return;
   expect(typesSymbols).toHaveLength(2); // User interface + DEFAULT_STATUS constant
 
   const userInterface = typesSymbols.find((s) => s.name === 'User');
@@ -789,7 +799,9 @@ export const validateStatus = (status: string): status is Status => {
     isExported: true,
   });
 
-  const functionsSymbols = symbolsByFile.get('src/functions.ts')!;
+  const functionsSymbols = symbolsByFile.get('src/functions.ts');
+  expect(functionsSymbols).toBeDefined();
+  if (!functionsSymbols) return;
   expect(functionsSymbols).toHaveLength(2);
   expect(functionsSymbols.map((s) => s.name).sort()).toEqual(['createUser', 'validateStatus']);
   expect(functionsSymbols.every((s) => s.type === 'function')).toBe(true);

@@ -77,10 +77,10 @@ describe('Symbol Reference Precision - Current Issues', () => {
         },
       ];
 
-      testCases.forEach(({ line, symbol, shouldFind }) => {
+      for (const { line, symbol, shouldFind } of testCases) {
         const result = helper.lineContainsSymbol(line, symbol);
         expect(result).toBe(shouldFind);
-      });
+      }
     });
 
     it('should NOT detect symbols inside comments', () => {
@@ -102,10 +102,10 @@ describe('Symbol Reference Precision - Current Issues', () => {
         },
       ];
 
-      testCases.forEach(({ line, symbol, shouldFind }) => {
+      for (const { line, symbol, shouldFind } of testCases) {
         const result = helper.lineContainsSymbol(line, symbol);
         expect(result).toBe(shouldFind);
-      });
+      }
     });
 
     it('should correctly detect actual symbol references', () => {
@@ -136,10 +136,10 @@ describe('Symbol Reference Precision - Current Issues', () => {
         },
       ];
 
-      testCases.forEach(({ line, symbol, shouldFind }) => {
+      for (const { line, symbol, shouldFind } of testCases) {
         const result = helper.lineContainsSymbol(line, symbol);
         expect(result).toBe(shouldFind);
-      });
+      }
     });
   });
 
@@ -158,10 +158,10 @@ describe('Symbol Reference Precision - Current Issues', () => {
         { line: 'export { register };', symbol: 'register', expected: true },
       ];
 
-      testCases.forEach(({ line, symbol, expected }) => {
+      for (const { line, symbol, expected } of testCases) {
         const result = helper.lineContainsSymbolPrecise(line, symbol);
         expect(result).toBe(expected);
-      });
+      }
     });
   });
 });
