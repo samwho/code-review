@@ -6,7 +6,7 @@ import { simpleGit } from 'simple-git';
 import type { SimpleGit } from 'simple-git';
 import { DiffParser } from './parsers/diff-parser';
 import { DependencyAnalyzer } from './dependency-analyzer';
-import { SimpleSymbolExtractor, type FileSymbols } from './simple-symbol-extractor';
+import { OxcSymbolExtractor, type OxcFileSymbols } from './oxc-symbol-extractor';
 import { APP_CONFIG } from './config';
 import { isSupportedSourceFile } from './utils/file-utils';
 import type { 
@@ -20,11 +20,11 @@ export type { DiffLine, FileDiff } from './types/git';
 
 export interface SimplifiedDiffResult {
   files: FileDiff[];
-  symbols?: FileSymbols[];
+  symbols?: OxcFileSymbols[];
 }
 
 export class GitService {
-  private readonly symbolExtractor: SimpleSymbolExtractor;
+  private readonly symbolExtractor: OxcSymbolExtractor;
   private readonly dependencyAnalyzer: DependencyAnalyzer;
   private readonly diffParser: DiffParser;
   private readonly repoPath: string;
@@ -33,7 +33,7 @@ export class GitService {
   constructor(repoPath?: string) {
     this.repoPath = repoPath || APP_CONFIG.DEFAULT_REPO_PATH;
     this.git = simpleGit(this.repoPath);
-    this.symbolExtractor = new SimpleSymbolExtractor(this.repoPath);
+    this.symbolExtractor = new OxcSymbolExtractor(this.repoPath);
     this.dependencyAnalyzer = new DependencyAnalyzer();
     this.diffParser = new DiffParser();
   }

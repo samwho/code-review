@@ -105,22 +105,19 @@ class DiffViewer {
     this.hideAffectedFiles();
 
     try {
-      // Fetch diff and external usages in parallel
-      const [diffResponse, externalUsagesPromise] = await Promise.allSettled([
-        fetch(`/api/diff?repository=${encodeURIComponent(repository)}&base=${encodeURIComponent(baseBranch)}&compare=${encodeURIComponent(compareBranch)}&order=${encodeURIComponent(order)}`),
-        this.fetchExternalUsages(repository, baseBranch, compareBranch, order)
-      ]);
+      // Fetch diff only (external usages removed for performance)
+      const diffResponse = await fetch(`/api/diff?repository=${encodeURIComponent(repository)}&base=${encodeURIComponent(baseBranch)}&compare=${encodeURIComponent(compareBranch)}&order=${encodeURIComponent(order)}`);
       
       // Handle diff response
-      if (diffResponse.status === 'rejected' || !diffResponse.value.ok) {
-        throw new Error(`HTTP ${diffResponse.value?.status}: ${diffResponse.value?.statusText}`);
+      if (!diffResponse.ok) {
+        throw new Error(`HTTP ${diffResponse.status}: ${diffResponse.statusText}`);
       }
       
-      const result = await diffResponse.value.json();
+      const result = await diffResponse.json();
       this.renderDiff(result, order);
 
-      // Handle external usages (async, don't block diff rendering)
-      this.handleExternalUsages(externalUsagesPromise);
+      // External usages disabled for performance
+      // TODO: Add "Load External Usages" button for on-demand loading
       
     } catch (error) {
       this.showError('Failed to load diff: ' + error.message);
