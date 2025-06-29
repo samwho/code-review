@@ -8,7 +8,7 @@ export const APP_CONFIG = {
   HOSTNAME: '0.0.0.0',
   
   // Git configuration
-  DEFAULT_REPO_PATH: './test-repo',
+  DEFAULT_REPO_PATH: './test-repos/basic-typescript-api',
   
   // File extensions supported for analysis
   SUPPORTED_EXTENSIONS: ['.ts', '.js', '.tsx', '.jsx'],

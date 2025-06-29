@@ -6,7 +6,8 @@
 import { test, expect, beforeEach, afterEach } from 'bun:test';
 import { GitService } from '../src/git';
 import { rmSync, mkdirSync, writeFileSync } from 'fs';
-import { spawn } from 'bun';
+import { simpleGit } from 'simple-git';
+import type { SimpleGit } from 'simple-git';
 import { join } from 'path';
 
 interface TestRepo {
@@ -22,6 +23,7 @@ interface TestFile {
 class TestRepoBuilder {
   private tempDir: string;
   private repoPath: string;
+  private git: SimpleGit;
 
   constructor(testName: string) {
     this.tempDir = `/tmp/code-review-test-${testName}-${Date.now()}`;
@@ -33,9 +35,10 @@ class TestRepoBuilder {
     mkdirSync(this.repoPath, { recursive: true });
     
     // Initialize git repo
-    await this.execGit(['init']);
-    await this.execGit(['config', 'user.email', 'test@example.com']);
-    await this.execGit(['config', 'user.name', 'Test User']);
+    this.git = simpleGit(this.repoPath);
+    await this.git.init();
+    await this.git.addConfig('user.email', 'test@example.com');
+    await this.git.addConfig('user.name', 'Test User');
     
     return {
       path: this.repoPath,
@@ -53,16 +56,16 @@ class TestRepoBuilder {
   }
 
   async commit(message: string): Promise<void> {
-    await this.execGit(['add', '.']);
-    await this.execGit(['commit', '-m', message]);
+    await this.git.add('.');
+    await this.git.commit(message);
   }
 
   async createBranch(name: string): Promise<void> {
-    await this.execGit(['checkout', '-b', name]);
+    await this.git.checkoutBranch(name, 'HEAD');
   }
 
   async checkout(branch: string): Promise<void> {
-    await this.execGit(['checkout', branch]);
+    await this.git.checkout(branch);
   }
 
   cleanup(): void {
@@ -73,19 +76,6 @@ class TestRepoBuilder {
     }
   }
 
-  private async execGit(args: string[]): Promise<void> {
-    const proc = spawn(['git', ...args], {
-      cwd: this.repoPath,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    });
-
-    const exitCode = await proc.exited;
-    if (exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text();
-      throw new Error(`Git command failed: git ${args.join(' ')}\nError: ${stderr}`);
-    }
-  }
 }
 
 // Test repositories cleanup tracking

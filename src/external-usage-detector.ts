@@ -5,8 +5,10 @@
 
 import { SimpleSymbolExtractor, type FileSymbols, type SimpleSymbol } from './simple-symbol-extractor';
 import { Project } from 'ts-morph';
-import { spawn } from 'bun';
+import { simpleGit } from 'simple-git';
+import type { SimpleGit } from 'simple-git';
 import { join } from 'path';
+import { APP_CONFIG } from './config';
 
 export interface ExternalUsage {
   symbol: string;
@@ -35,9 +37,11 @@ export class ExternalUsageDetector {
   private fileListCache: string[] | null = null;
   private fileListCacheTime = 0;
   private readonly CACHE_TTL = 30000; // 30 seconds
+  private git: SimpleGit;
 
   constructor(repoPath?: string) {
-    this.repoPath = repoPath || process.cwd() + '/test-repo';
+    this.repoPath = repoPath || APP_CONFIG.DEFAULT_REPO_PATH;
+    this.git = simpleGit(this.repoPath);
     this.symbolExtractor = new SimpleSymbolExtractor(this.repoPath);
     this.project = new Project({
       useInMemoryFileSystem: false,
@@ -140,18 +144,7 @@ export class ExternalUsageDetector {
     }
     try {
       // Use git to find all tracked files, then filter for source files
-      const proc = spawn(['git', 'ls-files'], {
-        cwd: this.repoPath,
-        stdout: 'pipe',
-        stderr: 'pipe'
-      });
-
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        throw new Error('Failed to get file list from git');
-      }
-
-      const output = await new Response(proc.stdout).text();
+      const output = await this.git.raw(['ls-files']);
       const allFiles = output.trim().split('\n').filter(Boolean);
 
       // Filter for TypeScript/JavaScript files

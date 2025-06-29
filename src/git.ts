@@ -2,7 +2,8 @@
  * Git service for performing Git operations and integrating with dependency analysis
  */
 
-import { spawn } from 'bun';
+import { simpleGit } from 'simple-git';
+import type { SimpleGit } from 'simple-git';
 import { DiffParser } from './parsers/diff-parser';
 import { DependencyAnalyzer } from './dependency-analyzer';
 import { SimpleSymbolExtractor, type FileSymbols } from './simple-symbol-extractor';
@@ -27,9 +28,11 @@ export class GitService {
   private readonly dependencyAnalyzer: DependencyAnalyzer;
   private readonly diffParser: DiffParser;
   private readonly repoPath: string;
+  private readonly git: SimpleGit;
   
   constructor(repoPath?: string) {
     this.repoPath = repoPath || APP_CONFIG.DEFAULT_REPO_PATH;
+    this.git = simpleGit(this.repoPath);
     this.symbolExtractor = new SimpleSymbolExtractor(this.repoPath);
     this.dependencyAnalyzer = new DependencyAnalyzer();
     this.diffParser = new DiffParser();
@@ -39,8 +42,7 @@ export class GitService {
    * Gets the diff between two branches
    */
   async getDiff(baseBranch: string, compareBranch: string): Promise<FileDiff[]> {
-    const output = await this.executeGitCommand([
-      'diff', 
+    const output = await this.git.diff([
       '--no-color', 
       '--unified=3', 
       `${baseBranch}...${compareBranch}`
@@ -54,49 +56,27 @@ export class GitService {
    * Gets all available branches in the repository
    */
   async getBranches(): Promise<string[]> {
-    const output = await this.executeGitCommand(['branch', '--format=%(refname:short)']);
-    return output.trim().split('\n').filter(branch => branch.trim());
+    const branchSummary = await this.git.branch();
+    return branchSummary.all;
   }
 
   /**
    * Gets the contents of a specific file from a branch
    */
   async getFileContents(branch: string, filePath: string): Promise<string> {
-    return await this.executeGitCommand(['show', `${branch}:${filePath}`]);
+    return await this.git.show([`${branch}:${filePath}`]);
   }
 
   /**
    * Gets all supported source files in a specific branch
    */
   async getFilesInBranch(branch: string): Promise<string[]> {
-    const output = await this.executeGitCommand(['ls-tree', '-r', '--name-only', branch]);
+    const output = await this.git.raw(['ls-tree', '-r', '--name-only', branch]);
     return output.trim().split('\n').filter(file => 
       file.trim() && isSupportedSourceFile(file)
     );
   }
 
-  /**
-   * Executes a git command and returns the output
-   */
-  private async executeGitCommand(args: string[]): Promise<string> {
-    const proc = spawn(['git', ...args], {
-      cwd: this.repoPath,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    });
-
-    const output = await new Response(proc.stdout).text();
-    const exitCode = await proc.exited;
-    
-    if (exitCode !== 0) {
-      const errorOutput = await new Response(proc.stderr).text();
-      throw new Error(
-        `Git command failed: git ${args.join(' ')}\nExit code: ${exitCode}\nError: ${errorOutput}`
-      );
-    }
-
-    return output;
-  }
 
 
   /**

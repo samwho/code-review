@@ -5,7 +5,10 @@
 
 import { Project } from 'ts-morph';
 import { createHash } from 'crypto';
+import { simpleGit } from 'simple-git';
+import type { SimpleGit } from 'simple-git';
 import type { FileDiff } from './types/git';
+import { APP_CONFIG } from './config';
 
 export type SimpleSymbol = 
   | {
@@ -36,11 +39,13 @@ export interface FileSymbols {
 export class SimpleSymbolExtractor {
   private project: Project;
   private repoPath: string;
+  private git: SimpleGit;
   private cache = new Map<string, FileSymbols>();
   private fileHashCache = new Map<string, string>();
 
   constructor(repoPath?: string) {
-    this.repoPath = repoPath || process.cwd() + '/test-repo';
+    this.repoPath = repoPath || APP_CONFIG.DEFAULT_REPO_PATH;
+    this.git = simpleGit(this.repoPath);
     this.project = new Project({
       useInMemoryFileSystem: true,
       compilerOptions: {
@@ -219,7 +224,7 @@ export class SimpleSymbolExtractor {
             name,
             type: 'export',
             line: interfaceDecl.getStartLineNumber(),
-            isExported: true // Interfaces we extract are always exported
+            isExported: interfaceDecl.isExported()
           });
         }
       });
@@ -312,19 +317,6 @@ export class SimpleSymbolExtractor {
    * Get file content using git show
    */
   private async getFileContent(filename: string, branch: string): Promise<string> {
-    const proc = Bun.spawn(['git', 'show', `${branch}:${filename}`], {
-      cwd: this.repoPath,
-      stdout: 'pipe',
-      stderr: 'pipe'
-    });
-
-    const output = await new Response(proc.stdout).text();
-    const exitCode = await proc.exited;
-
-    if (exitCode !== 0) {
-      throw new Error(`Failed to get content for ${filename}`);
-    }
-
-    return output;
+    return await this.git.show([`${branch}:${filename}`]);
   }
 }

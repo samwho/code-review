@@ -17,6 +17,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "simple-git": "^3.28.0",
     "ts-morph": "^26.0.0"
   }
 }
