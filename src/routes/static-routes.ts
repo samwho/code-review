@@ -10,20 +10,17 @@ export class StaticRoutes {
    */
   async handleStaticRequest(pathname: string): Promise<Response> {
     // Default to index.html for root
-    if (pathname === '/') {
-      pathname = '/index.html';
-    }
-    
-    const filePath = `./public${pathname}`;
-    
+    const resolvedPathname = pathname === '/' ? '/index.html' : pathname;
+    const filePath = `./public${resolvedPathname}`;
+
     try {
       const file = Bun.file(filePath);
       const exists = await file.exists();
-      
+
       if (!exists) {
         return new Response('File not found', { status: 404 });
       }
-      
+
       const contentType = getContentTypeForExtension(pathname);
       return new Response(file, {
         headers: {

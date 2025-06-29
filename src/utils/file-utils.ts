@@ -24,14 +24,16 @@ export function getFileExtension(filename: string): string {
  */
 export function getContentTypeForExtension(filename: string): string {
   const extension = getFileExtension(filename);
-  return APP_CONFIG.CONTENT_TYPES[extension as keyof typeof APP_CONFIG.CONTENT_TYPES] || 'text/plain';
+  return (
+    APP_CONFIG.CONTENT_TYPES[extension as keyof typeof APP_CONFIG.CONTENT_TYPES] || 'text/plain'
+  );
 }
 
 /**
  * Checks if a file should be included in dependency analysis
  */
 export function isSupportedSourceFile(filename: string): boolean {
-  const extension = '.' + getFileExtension(filename);
+  const extension = `.${getFileExtension(filename)}`;
   return APP_CONFIG.SUPPORTED_EXTENSIONS.includes(extension);
 }
 
@@ -46,15 +48,15 @@ export function isHighlightableLanguage(language: string): boolean {
  * Resolves a relative module path to an absolute path within the project
  */
 export function resolveModulePath(
-  modulePath: string, 
-  currentFile: string, 
+  modulePath: string,
+  currentFile: string,
   availableFiles: Set<string>
 ): string | null {
   // Handle relative imports
   if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
     const currentDir = currentFile.split('/').slice(0, -1);
     const pathParts = modulePath.split('/');
-    
+
     for (const part of pathParts) {
       if (part === '.') continue;
       if (part === '..') {
@@ -63,9 +65,9 @@ export function resolveModulePath(
         currentDir.push(part);
       }
     }
-    
+
     const resolvedPath = currentDir.join('/');
-    
+
     // Try different extensions
     for (const ext of APP_CONFIG.SUPPORTED_EXTENSIONS) {
       const withExt = resolvedPath + ext;
@@ -73,18 +75,18 @@ export function resolveModulePath(
         return withExt;
       }
     }
-    
+
     // Try index files
     for (const ext of APP_CONFIG.SUPPORTED_EXTENSIONS) {
-      const indexPath = resolvedPath + '/index' + ext;
+      const indexPath = `${resolvedPath}/index${ext}`;
       if (availableFiles.has(indexPath)) {
         return indexPath;
       }
     }
-    
+
     return resolvedPath;
   }
-  
+
   // For now, ignore external modules (npm packages)
   return null;
 }

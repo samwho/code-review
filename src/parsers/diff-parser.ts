@@ -2,7 +2,7 @@
  * Parser for Git diff output
  */
 
-import type { FileDiff, DiffLine } from '../types/git';
+import type { FileDiff } from '../types/git';
 
 export class DiffParser {
   /**
@@ -12,7 +12,7 @@ export class DiffParser {
     const files: FileDiff[] = [];
     const lines = diffOutput.split('\n');
     let currentFile: FileDiff | null = null;
-    let lineContext = new LineContext();
+    const lineContext = new LineContext();
 
     for (const line of lines) {
       if (this.isFileDiffHeader(line)) {
@@ -45,15 +45,11 @@ export class DiffParser {
       oldFilename: match[1] !== match[2] ? match[1] : undefined,
       lines: [],
       isNew: false,
-      isDeleted: false
+      isDeleted: false,
     };
   }
 
-  private processLine(
-    line: string, 
-    file: FileDiff, 
-    context: LineContext
-  ): void {
+  private processLine(line: string, file: FileDiff, context: LineContext): void {
     if (line.startsWith('new file mode')) {
       file.isNew = true;
     } else if (line.startsWith('deleted file mode')) {
@@ -69,62 +65,46 @@ export class DiffParser {
     }
   }
 
-  private processHunkHeader(
-    line: string, 
-    file: FileDiff, 
-    context: LineContext
-  ): void {
+  private processHunkHeader(line: string, file: FileDiff, context: LineContext): void {
     const match = line.match(/@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@(.*)/);
     if (match) {
-      context.oldLineNumber = parseInt(match[1]);
-      context.newLineNumber = parseInt(match[3]);
-      
+      context.oldLineNumber = Number.parseInt(match[1]);
+      context.newLineNumber = Number.parseInt(match[3]);
+
       file.lines.push({
         type: 'context',
         content: line,
         lineNumber: undefined,
         oldLineNumber: undefined,
-        isHunkHeader: true
+        isHunkHeader: true,
       });
     }
   }
 
-  private processAddedLine(
-    line: string, 
-    file: FileDiff, 
-    context: LineContext
-  ): void {
+  private processAddedLine(line: string, file: FileDiff, context: LineContext): void {
     file.lines.push({
       type: 'added',
       content: line.substring(1),
-      lineNumber: context.newLineNumber
+      lineNumber: context.newLineNumber,
     });
     context.newLineNumber++;
   }
 
-  private processRemovedLine(
-    line: string, 
-    file: FileDiff, 
-    context: LineContext
-  ): void {
+  private processRemovedLine(line: string, file: FileDiff, context: LineContext): void {
     file.lines.push({
       type: 'removed',
       content: line.substring(1),
-      oldLineNumber: context.oldLineNumber
+      oldLineNumber: context.oldLineNumber,
     });
     context.oldLineNumber++;
   }
 
-  private processContextLine(
-    line: string, 
-    file: FileDiff, 
-    context: LineContext
-  ): void {
+  private processContextLine(line: string, file: FileDiff, context: LineContext): void {
     file.lines.push({
       type: 'context',
       content: line.substring(1),
       lineNumber: context.newLineNumber,
-      oldLineNumber: context.oldLineNumber
+      oldLineNumber: context.oldLineNumber,
     });
     context.oldLineNumber++;
     context.newLineNumber++;
@@ -135,6 +115,6 @@ export class DiffParser {
  * Tracks line numbers while parsing diff
  */
 class LineContext {
-  oldLineNumber: number = 0;
-  newLineNumber: number = 0;
+  oldLineNumber = 0;
+  newLineNumber = 0;
 }

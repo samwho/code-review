@@ -1,16 +1,15 @@
 /**
  * Main server for the Code Review application
- * 
+ *
  * This server provides:
  * - API endpoints for Git operations and dependency analysis
  * - Static file serving for the web UI
  * - CORS support for cross-origin requests
  */
 
-import { GitService } from './git';
+import { APP_CONFIG } from './config';
 import { ApiRoutes } from './routes/api-routes';
 import { StaticRoutes } from './routes/static-routes';
-import { APP_CONFIG } from './config';
 
 export class CodeReviewServer {
   private apiRoutes: ApiRoutes;
@@ -27,14 +26,16 @@ export class CodeReviewServer {
    * Starts the HTTP server
    */
   async start(): Promise<void> {
-    const server = Bun.serve({
+    const _server = Bun.serve({
       port: this.port,
       hostname: APP_CONFIG.HOSTNAME,
       fetch: this.handleRequest.bind(this),
     });
 
     console.log(`Code Review UI server running at http://${APP_CONFIG.HOSTNAME}:${this.port}`);
-    console.log(`Available repositories: basic-typescript-api, react-components-library, backend-service-refactor, utility-library-breaking-changes`);
+    console.log(
+      'Available repositories: basic-typescript-api, react-components-library, backend-service-refactor, utility-library-breaking-changes'
+    );
   }
 
   /**
@@ -42,13 +43,13 @@ export class CodeReviewServer {
    */
   private async handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    
+
     try {
       // Handle API routes
       if (url.pathname.startsWith('/api/')) {
         return await this.apiRoutes.handleApiRequest(url, request);
       }
-      
+
       // Handle static files
       return await this.staticRoutes.handleStaticRequest(url.pathname);
     } catch (error) {
@@ -63,4 +64,3 @@ if (import.meta.main) {
   const server = new CodeReviewServer();
   server.start().catch(console.error);
 }
-

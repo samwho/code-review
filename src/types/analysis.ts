@@ -24,7 +24,15 @@ export interface ExportDeclaration {
   line: number;
 }
 
-export type ExportKind = 'function' | 'class' | 'interface' | 'type' | 'const' | 'let' | 'var' | 'enum';
+export type ExportKind =
+  | 'function'
+  | 'class'
+  | 'interface'
+  | 'type'
+  | 'const'
+  | 'let'
+  | 'var'
+  | 'enum';
 
 export interface SymbolReference {
   name: string;

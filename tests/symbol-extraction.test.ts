@@ -3,12 +3,12 @@
  * Tests various TypeScript/JavaScript patterns and edge cases
  */
 
-import { test, expect, beforeEach, afterEach } from 'bun:test';
-import { OxcSymbolExtractor, type OxcSymbol, type OxcFileSymbols } from '../src/oxc-symbol-extractor';
-import { rmSync, mkdirSync, writeFileSync } from 'fs';
-import { simpleGit } from 'simple-git';
+import { afterEach, expect, test } from 'bun:test';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { SimpleGit } from 'simple-git';
-import { join } from 'path';
+import { simpleGit } from 'simple-git';
+import { OxcSymbolExtractor } from '../src/oxc-symbol-extractor';
 
 interface TestRepo {
   path: string;
@@ -33,16 +33,16 @@ class SymbolTestRepoBuilder {
   async create(): Promise<TestRepo> {
     // Create directory structure
     mkdirSync(this.repoPath, { recursive: true });
-    
+
     // Initialize git repo
     this.git = simpleGit(this.repoPath);
     await this.git.init();
     await this.git.addConfig('user.email', 'test@example.com');
     await this.git.addConfig('user.name', 'Test User');
-    
+
     return {
       path: this.repoPath,
-      extractor: new OxcSymbolExtractor(this.repoPath)
+      extractor: new OxcSymbolExtractor(this.repoPath),
     };
   }
 
@@ -75,7 +75,6 @@ class SymbolTestRepoBuilder {
       console.warn(`Failed to cleanup ${this.tempDir}:`, error);
     }
   }
-
 }
 
 // Test repositories cleanup tracking
@@ -125,8 +124,8 @@ interface User {
   id: string;
   name: string;
 }
-      `.trim()
-    }
+      `.trim(),
+    },
   ];
 
   await builder.addFiles(files);
@@ -141,49 +140,49 @@ interface User {
   expect(fileSymbols.symbols).toHaveLength(5);
 
   // Check class
-  const userServiceClass = fileSymbols.symbols.find(s => s.name === 'UserService');
+  const userServiceClass = fileSymbols.symbols.find((s) => s.name === 'UserService');
   expect(userServiceClass).toEqual({
     name: 'UserService',
     type: 'class',
     line: 1,
-    isExported: true
+    isExported: true,
   });
 
   // Check methods
-  const createUserMethod = fileSymbols.symbols.find(s => s.name === 'createUser');
+  const createUserMethod = fileSymbols.symbols.find((s) => s.name === 'createUser');
   expect(createUserMethod).toEqual({
     name: 'createUser',
     type: 'function',
     line: 4,
     isExported: true,
-    className: 'UserService'
+    className: 'UserService',
   });
 
-  const findUserMethod = fileSymbols.symbols.find(s => s.name === 'findUser');
+  const findUserMethod = fileSymbols.symbols.find((s) => s.name === 'findUser');
   expect(findUserMethod).toEqual({
     name: 'findUser',
     type: 'function',
     line: 10,
     isExported: true,
-    className: 'UserService'
+    className: 'UserService',
   });
 
-  const validateUserMethod = fileSymbols.symbols.find(s => s.name === 'validateUser');
+  const validateUserMethod = fileSymbols.symbols.find((s) => s.name === 'validateUser');
   expect(validateUserMethod).toEqual({
     name: 'validateUser',
     type: 'function',
     line: 14,
     isExported: true,
-    className: 'UserService'
+    className: 'UserService',
   });
 
   // Check interface
-  const userInterface = fileSymbols.symbols.find(s => s.name === 'User');
+  const userInterface = fileSymbols.symbols.find((s) => s.name === 'User');
   expect(userInterface).toEqual({
     name: 'User',
     type: 'export',
     line: 19,
-    isExported: false // interfaces default to not exported
+    isExported: false, // interfaces default to not exported
   });
 });
 
@@ -232,8 +231,8 @@ export function* generateNumbers(): Generator<number> {
 export function identity<T>(value: T): T {
   return value;
 }
-      `.trim()
-    }
+      `.trim(),
+    },
   ];
 
   await builder.addFiles(files);
@@ -244,58 +243,61 @@ export function identity<T>(value: T): T {
 
   expect(symbols).toHaveLength(1);
   const fileSymbols = symbols[0];
-  
+
   // Debug: print what OXC actually found
-  console.log('OXC found symbols:', fileSymbols.symbols.map(s => s.name));
-  
+  console.log(
+    'OXC found symbols:',
+    fileSymbols.symbols.map((s) => s.name)
+  );
+
   expect(fileSymbols.symbols).toHaveLength(5); // Updated for OXC behavior
 
   // Regular function declaration
-  const calculateTax = fileSymbols.symbols.find(s => s.name === 'calculateTax');
+  const calculateTax = fileSymbols.symbols.find((s) => s.name === 'calculateTax');
   expect(calculateTax).toEqual({
     name: 'calculateTax',
     type: 'function',
     line: 2,
-    isExported: true
+    isExported: true,
   });
 
   // Arrow function variable
-  const validateEmail = fileSymbols.symbols.find(s => s.name === 'validateEmail');
+  const validateEmail = fileSymbols.symbols.find((s) => s.name === 'validateEmail');
   expect(validateEmail).toEqual({
     name: 'validateEmail',
     type: 'function',
     line: 12,
-    isExported: true
+    isExported: true,
   });
 
   // Function expression variable (OXC may not extract these)
   // const processPayment = fileSymbols.symbols.find(s => s.name === 'processPayment');
 
   // Async function
-  const fetchUserData = fileSymbols.symbols.find(s => s.name === 'fetchUserData');
+  const fetchUserData = fileSymbols.symbols.find((s) => s.name === 'fetchUserData');
   expect(fetchUserData).toEqual({
     name: 'fetchUserData',
     type: 'function',
     line: 22,
-    isExported: true
+    isExported: true,
   });
 
   // Generator function
-  const generateNumbers = fileSymbols.symbols.find(s => s.name === 'generateNumbers');
+  const generateNumbers = fileSymbols.symbols.find((s) => s.name === 'generateNumbers');
   expect(generateNumbers).toEqual({
     name: 'generateNumbers',
     type: 'function',
     line: 28,
-    isExported: true
+    isExported: true,
   });
 
   // Generic function
-  const identity = fileSymbols.symbols.find(s => s.name === 'identity');
+  const identity = fileSymbols.symbols.find((s) => s.name === 'identity');
   expect(identity).toEqual({
     name: 'identity',
     type: 'function',
     line: 35,
-    isExported: true
+    isExported: true,
   });
 });
 
@@ -342,8 +344,8 @@ export const createApiClient = (baseUrl: string) => ({
     body: JSON.stringify(data)
   })
 });
-      `.trim()
-    }
+      `.trim(),
+    },
   ];
 
   await builder.addFiles(files);
@@ -357,55 +359,55 @@ export const createApiClient = (baseUrl: string) => ({
   expect(fileSymbols.symbols).toHaveLength(8); // Updated: correct count with DB alias
 
   // Named constant exports
-  const apiBaseUrl = fileSymbols.symbols.find(s => s.name === 'API_BASE_URL');
+  const apiBaseUrl = fileSymbols.symbols.find((s) => s.name === 'API_BASE_URL');
   expect(apiBaseUrl).toEqual({
     name: 'API_BASE_URL',
     type: 'export',
     line: 2,
-    isExported: true
+    isExported: true,
   });
 
-  const debugMode = fileSymbols.symbols.find(s => s.name === 'DEBUG_MODE');
+  const debugMode = fileSymbols.symbols.find((s) => s.name === 'DEBUG_MODE');
   expect(debugMode).toEqual({
     name: 'DEBUG_MODE',
     type: 'export',
     line: 4,
-    isExported: true
+    isExported: true,
   });
 
   // Interface export
-  const apiResponse = fileSymbols.symbols.find(s => s.name === 'ApiResponse');
+  const apiResponse = fileSymbols.symbols.find((s) => s.name === 'ApiResponse');
   expect(apiResponse).toEqual({
     name: 'ApiResponse',
     type: 'export',
     line: 18,
-    isExported: true
+    isExported: true,
   });
 
   // Re-exports
-  const userService = fileSymbols.symbols.find(s => s.name === 'UserService');
+  const userService = fileSymbols.symbols.find((s) => s.name === 'UserService');
   expect(userService).toEqual({
     name: 'UserService',
     type: 'export',
     line: 14,
-    isExported: true
+    isExported: true,
   });
 
-  const db = fileSymbols.symbols.find(s => s.name === 'DB');
+  const db = fileSymbols.symbols.find((s) => s.name === 'DB');
   expect(db).toEqual({
     name: 'DB',
     type: 'export',
     line: 15, // Updated line number
-    isExported: true
+    isExported: true,
   });
 
   // Arrow function export
-  const createApiClient = fileSymbols.symbols.find(s => s.name === 'createApiClient');
+  const createApiClient = fileSymbols.symbols.find((s) => s.name === 'createApiClient');
   expect(createApiClient).toEqual({
     name: 'createApiClient',
     type: 'function',
     line: 29,
-    isExported: true
+    isExported: true,
   });
 });
 
@@ -493,8 +495,8 @@ export class ServiceWithDecorators {
     return this.logger.info('Getting data');
   }
 }
-      `.trim()
-    }
+      `.trim(),
+    },
   ];
 
   await builder.addFiles(files);
@@ -507,71 +509,73 @@ export class ServiceWithDecorators {
   const fileSymbols = symbols[0];
 
   // Check base class
-  const baseRepo = fileSymbols.symbols.find(s => s.name === 'BaseRepository');
+  const baseRepo = fileSymbols.symbols.find((s) => s.name === 'BaseRepository');
   expect(baseRepo).toEqual({
     name: 'BaseRepository',
     type: 'class',
     line: 1,
-    isExported: true
+    isExported: true,
   });
 
   // Check concrete implementation of create method (OXC finds implementation, not abstract declaration)
-  const createMethod = fileSymbols.symbols.find(s => s.name === 'create' && s.type === 'function');
+  const createMethod = fileSymbols.symbols.find(
+    (s) => s.name === 'create' && s.type === 'function'
+  );
   expect(createMethod).toEqual({
     name: 'create',
     type: 'function',
     line: 28,
     isExported: false,
-    className: 'UserRepository'
+    className: 'UserRepository',
   });
 
   // Check static method
-  const staticMethod = fileSymbols.symbols.find(s => s.name === 'getTablePrefix');
+  const staticMethod = fileSymbols.symbols.find((s) => s.name === 'getTablePrefix');
   expect(staticMethod).toEqual({
     name: 'getTablePrefix',
     type: 'function',
     line: 8,
     isExported: true,
-    className: 'BaseRepository'
+    className: 'BaseRepository',
   });
 
   // Check getters/setters
-  const getter = fileSymbols.symbols.find(s => s.name === 'connectionString');
+  const getter = fileSymbols.symbols.find((s) => s.name === 'connectionString');
   expect(getter).toEqual({
     name: 'connectionString',
     type: 'function',
     line: 13,
     isExported: true,
-    className: 'BaseRepository'
+    className: 'BaseRepository',
   });
 
-  const setter = fileSymbols.symbols.find(s => s.name === 'timeout');
+  const setter = fileSymbols.symbols.find((s) => s.name === 'timeout');
   expect(setter).toEqual({
     name: 'timeout',
     type: 'function',
     line: 18,
     isExported: true,
-    className: 'BaseRepository'
+    className: 'BaseRepository',
   });
 
   // Check derived class
-  const userRepo = fileSymbols.symbols.find(s => s.name === 'UserRepository');
+  const userRepo = fileSymbols.symbols.find((s) => s.name === 'UserRepository');
   expect(userRepo).toEqual({
     name: 'UserRepository',
     type: 'class',
     line: 25,
-    isExported: false
+    isExported: false,
   });
 
   // Note: Constructors are not extracted as separate symbols by OXC
 
   // Check decorated class
-  const decoratedService = fileSymbols.symbols.find(s => s.name === 'ServiceWithDecorators');
+  const decoratedService = fileSymbols.symbols.find((s) => s.name === 'ServiceWithDecorators');
   expect(decoratedService).toEqual({
     name: 'ServiceWithDecorators',
     type: 'class',
     line: 68, // Updated for OXC line numbering
-    isExported: true
+    isExported: true,
   });
 });
 
@@ -582,7 +586,7 @@ test('edge cases and error handling', async () => {
   const files: TestFile[] = [
     {
       path: 'src/empty.ts',
-      content: ''
+      content: '',
     },
     {
       path: 'src/comments-only.ts',
@@ -592,7 +596,7 @@ test('edge cases and error handling', async () => {
  * Multi-line comment
  * with no actual code
  */
-      `.trim()
+      `.trim(),
     },
     {
       path: 'src/unicode.ts',
@@ -609,7 +613,7 @@ export const 数学 = {
 
 // Emoji in names (valid JavaScript identifiers)
 export const 🚀rocket = 'launched';
-      `.trim()
+      `.trim(),
     },
     {
       path: 'src/keywords.ts',
@@ -630,7 +634,7 @@ export class Parser {
 // Variable names that look like keywords
 export const function = 'not a function';
 export const class = 'not a class';
-      `.trim()
+      `.trim(),
     },
     {
       path: 'src/syntax-error.ts',
@@ -649,31 +653,37 @@ export class BrokenClass {
     return 'also valid';
   }
 }
-      `.trim()
-    }
+      `.trim(),
+    },
   ];
 
   await builder.addFiles(files);
   await builder.commit('Add edge cases');
 
-  const fileDiffs = files.map(f => ({ filename: f.path, status: 'added' as const, lines: [] }));
+  const fileDiffs = files.map((f) => ({ filename: f.path, status: 'added' as const, lines: [] }));
   const symbols = await repo.extractor.extractFromChangedFiles(fileDiffs, 'HEAD');
-  
+
   // Debug: see what files were processed
-  console.log('Files processed:', symbols.map(s => s.filename));
+  console.log(
+    'Files processed:',
+    symbols.map((s) => s.filename)
+  );
 
   // Empty file should return no symbols
-  const emptySymbols = symbols.find(s => s.filename === 'src/empty.ts');
+  const emptySymbols = symbols.find((s) => s.filename === 'src/empty.ts');
   expect(emptySymbols).toBeUndefined();
 
   // Comments-only file should return no symbols
-  const commentsSymbols = symbols.find(s => s.filename === 'src/comments-only.ts');
+  const commentsSymbols = symbols.find((s) => s.filename === 'src/comments-only.ts');
   expect(commentsSymbols).toBeUndefined();
 
   // Unicode file - OXC might have issues with unicode, so make this optional
-  const unicodeSymbols = symbols.find(s => s.filename === 'src/unicode.ts');
+  const unicodeSymbols = symbols.find((s) => s.filename === 'src/unicode.ts');
   if (unicodeSymbols) {
-    console.log('Unicode symbols found:', unicodeSymbols.symbols.map(s => s.name));
+    console.log(
+      'Unicode symbols found:',
+      unicodeSymbols.symbols.map((s) => s.name)
+    );
     // If unicode works, verify it has symbols
     expect(unicodeSymbols.symbols.length).toBeGreaterThan(0);
   } else {
@@ -681,14 +691,17 @@ export class BrokenClass {
   }
 
   // Keywords file should handle reserved words as method names
-  const keywordsSymbols = symbols.find(s => s.filename === 'src/keywords.ts');
+  const keywordsSymbols = symbols.find((s) => s.filename === 'src/keywords.ts');
   if (keywordsSymbols) {
-    console.log('Keywords symbols found:', keywordsSymbols.symbols.map(s => s.name));
-    const parserClass = keywordsSymbols.symbols.find(s => s.name === 'Parser');
+    console.log(
+      'Keywords symbols found:',
+      keywordsSymbols.symbols.map((s) => s.name)
+    );
+    const parserClass = keywordsSymbols.symbols.find((s) => s.name === 'Parser');
     expect(parserClass).toBeDefined();
-    
+
     // Check if public method is found (might behave differently in OXC)
-    const publicMethod = keywordsSymbols.symbols.find(s => s.name === 'public');
+    const publicMethod = keywordsSymbols.symbols.find((s) => s.name === 'public');
     if (publicMethod) {
       expect(publicMethod.type).toBe('function');
       expect(publicMethod.className).toBe('Parser');
@@ -698,9 +711,12 @@ export class BrokenClass {
   }
 
   // Syntax error file - OXC might skip files with syntax errors entirely
-  const errorSymbols = symbols.find(s => s.filename === 'src/syntax-error.ts');
+  const errorSymbols = symbols.find((s) => s.filename === 'src/syntax-error.ts');
   if (errorSymbols) {
-    console.log('Syntax error file processed, found symbols:', errorSymbols.symbols.map(s => s.name));
+    console.log(
+      'Syntax error file processed, found symbols:',
+      errorSymbols.symbols.map((s) => s.name)
+    );
     expect(errorSymbols.symbols.length).toBeGreaterThanOrEqual(0);
   } else {
     console.log('Syntax error file skipped by OXC (expected behavior)');
@@ -769,8 +785,8 @@ export const FancyButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return <button ref={ref} {...props}>{children}</button>;
   }
 );
-      `.trim()
-    }
+      `.trim(),
+    },
   ];
 
   await builder.addFiles(files);
@@ -784,58 +800,58 @@ export const FancyButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
   expect(fileSymbols.symbols.length).toBeGreaterThan(0);
 
   // Function component (arrow function)
-  const userCard = fileSymbols.symbols.find(s => s.name === 'UserCard');
+  const userCard = fileSymbols.symbols.find((s) => s.name === 'UserCard');
   expect(userCard).toEqual({
     name: 'UserCard',
     type: 'function',
     line: 4,
-    isExported: true
+    isExported: true,
   });
 
   // Class component
-  const todoList = fileSymbols.symbols.find(s => s.name === 'TodoList');
+  const todoList = fileSymbols.symbols.find((s) => s.name === 'TodoList');
   expect(todoList).toEqual({
     name: 'TodoList',
     type: 'class',
     line: 11, // Updated line number
-    isExported: true
+    isExported: true,
   });
 
   // Class component methods
-  const componentDidMount = fileSymbols.symbols.find(s => s.name === 'componentDidMount');
+  const componentDidMount = fileSymbols.symbols.find((s) => s.name === 'componentDidMount');
   expect(componentDidMount).toEqual({
     name: 'componentDidMount',
     type: 'function',
     line: 14,
     isExported: true,
-    className: 'TodoList'
+    className: 'TodoList',
   });
 
   // Custom hook
-  const useLocalStorage = fileSymbols.symbols.find(s => s.name === 'useLocalStorage');
+  const useLocalStorage = fileSymbols.symbols.find((s) => s.name === 'useLocalStorage');
   expect(useLocalStorage).toEqual({
     name: 'useLocalStorage',
     type: 'function',
     line: 29,
-    isExported: true
+    isExported: true,
   });
 
   // HOC function
-  const withAuth = fileSymbols.symbols.find(s => s.name === 'withAuth');
+  const withAuth = fileSymbols.symbols.find((s) => s.name === 'withAuth');
   expect(withAuth).toEqual({
     name: 'withAuth',
     type: 'function',
     line: 41,
-    isExported: true
+    isExported: true,
   });
 
   // Forward ref component
-  const fancyButton = fileSymbols.symbols.find(s => s.name === 'FancyButton');
+  const fancyButton = fileSymbols.symbols.find((s) => s.name === 'FancyButton');
   expect(fancyButton).toEqual({
     name: 'FancyButton',
     type: 'export', // Forward ref is detected as export
     line: 50,
-    isExported: true
+    isExported: true,
   });
 });
 
@@ -846,26 +862,26 @@ test('non-typescript files are skipped', async () => {
   const files: TestFile[] = [
     {
       path: 'README.md',
-      content: '# My Project\n\nThis is a readme file.'
+      content: '# My Project\n\nThis is a readme file.',
     },
     {
       path: 'package.json',
-      content: '{"name": "test", "version": "1.0.0"}'
+      content: '{"name": "test", "version": "1.0.0"}',
     },
     {
       path: 'src/valid.ts',
-      content: 'export class ValidClass {}'
+      content: 'export class ValidClass {}',
     },
     {
       path: 'src/styles.css',
-      content: '.button { background: blue; }'
-    }
+      content: '.button { background: blue; }',
+    },
   ];
 
   await builder.addFiles(files);
   await builder.commit('Add mixed file types');
 
-  const fileDiffs = files.map(f => ({ filename: f.path, status: 'added' as const, lines: [] }));
+  const fileDiffs = files.map((f) => ({ filename: f.path, status: 'added' as const, lines: [] }));
   const symbols = await repo.extractor.extractFromChangedFiles(fileDiffs, 'HEAD');
 
   // Should only extract from TypeScript file
@@ -913,8 +929,8 @@ export const CONSTANT_${i} = ${i};
   const files: TestFile[] = [
     {
       path: 'src/large.ts',
-      content: generateLargeFile()
-    }
+      content: generateLargeFile(),
+    },
   ];
 
   await builder.addFiles(files);
@@ -927,15 +943,17 @@ export const CONSTANT_${i} = ${i};
 
   // Should complete within reasonable time (5 seconds max)
   expect(duration).toBeLessThan(5000);
-  
+
   // Should extract all symbols correctly
   expect(symbols).toHaveLength(1);
   expect(symbols[0].symbols.length).toBe(600); // 100 classes + 300 methods + 100 functions + 100 constants
-  
+
   // Verify a few specific symbols
-  const service0 = symbols[0].symbols.find(s => s.name === 'Service0');
+  const service0 = symbols[0].symbols.find((s) => s.name === 'Service0');
   expect(service0?.type).toBe('class');
-  
-  const method11 = symbols[0].symbols.find(s => s.name === 'method11' && s.className === 'Service1');
+
+  const method11 = symbols[0].symbols.find(
+    (s) => s.name === 'method11' && s.className === 'Service1'
+  );
   expect(method11?.className).toBe('Service1');
 });

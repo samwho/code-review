@@ -196,7 +196,7 @@ export type DiffLineType = 'added' | 'removed' | 'context';
 
 // Type guard for supported extensions
 export function isSupportedExtension(ext: string): boolean {
-  return APP_CONFIG.SUPPORTED_EXTENSIONS.includes(ext as any);
+  return (APP_CONFIG.SUPPORTED_EXTENSIONS as readonly string[]).includes(ext);
 }
 
 // Type guard for supported languages

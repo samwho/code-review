@@ -17,9 +17,9 @@ export interface SymbolOccurrence {
  * Ignores symbols inside string literals, template literals, and comments
  */
 export function findSymbolReferencesInLine(
-  lineContent: string, 
-  symbolName: string, 
-  lineNumber: number = 1
+  lineContent: string,
+  symbolName: string,
+  lineNumber = 1
 ): SymbolOccurrence[] {
   if (!lineContent.trim()) {
     return [];
@@ -30,22 +30,26 @@ export function findSymbolReferencesInLine(
     // We wrap it in a minimal function to ensure it's valid syntax for parsing
     // Handle incomplete statements by adding closing braces/semicolons as needed
     let processedContent = lineContent.trim();
-    
+
     // Add semicolon if missing (for incomplete statements)
-    if (!processedContent.endsWith(';') && !processedContent.endsWith('{') && !processedContent.endsWith('}')) {
+    if (
+      !processedContent.endsWith(';') &&
+      !processedContent.endsWith('{') &&
+      !processedContent.endsWith('}')
+    ) {
       processedContent += ';';
     }
-    
+
     // Close incomplete blocks
     if (processedContent.includes('{') && !processedContent.includes('}')) {
       processedContent += ' }';
     }
-    
+
     const wrappedCode = `function temp() {\n${processedContent}\n}`;
-    
+
     const result = parseSync('temp.ts', wrappedCode, {
       sourceType: 'module',
-      allowReturnOutsideFunction: true
+      allowReturnOutsideFunction: true,
     });
 
     if (!result.program) {
@@ -55,26 +59,36 @@ export function findSymbolReferencesInLine(
     const occurrences: SymbolOccurrence[] = [];
 
     // Walk the AST to find identifier references
-    walkAST(result.program, (node: any) => {
+    walkAST(result.program, (node: unknown) => {
+      const nodeWithType = node as {
+        type: string;
+        name?: string;
+        span?: { start: { line: number; column: number } };
+      };
       // Only look for identifiers that match our symbol name
-      if (node.type === 'Identifier' && node.name === symbolName) {
+      if (nodeWithType.type === 'Identifier' && nodeWithType.name === symbolName) {
         // Determine context based on parent node
-        const context = determineIdentifierContext(node, getParentNode(result.program, node));
-        
+        const context = determineIdentifierContext(
+          nodeWithType,
+          getParentNode(result.program, nodeWithType)
+        );
+
         // Adjust line number (subtract 1 because we added wrapper function)
-        const actualLine = node.span ? Math.max(lineNumber, lineNumber + node.span.start.line - 1) : lineNumber;
-        
+        const actualLine = nodeWithType.span
+          ? Math.max(lineNumber, lineNumber + nodeWithType.span.start.line - 1)
+          : lineNumber;
+
         occurrences.push({
           name: symbolName,
           line: actualLine,
-          column: node.span?.start.column || 0,
-          context
+          column: nodeWithType.span?.start.column || 0,
+          context,
         });
       }
     });
 
     return occurrences;
-  } catch (error) {
+  } catch (_error) {
     // If parsing fails, fall back to simple detection but still avoid strings
     return fallbackSymbolDetection(lineContent, symbolName, lineNumber);
   }
@@ -91,7 +105,7 @@ export function lineContainsSymbolPrecise(lineContent: string, symbolName: strin
 /**
  * Walk AST nodes recursively
  */
-function walkAST(node: any, callback: (node: any) => void) {
+function walkAST(node: unknown, callback: (node: unknown) => void) {
   if (!node || typeof node !== 'object') {
     return;
   }
@@ -114,10 +128,10 @@ function walkAST(node: any, callback: (node: any) => void) {
 /**
  * Get parent node of a given node (simplified approach)
  */
-function getParentNode(root: any, targetNode: any): any {
+function getParentNode(root: unknown, targetNode: unknown): unknown {
   let parent = null;
-  
-  walkAST(root, (node: any) => {
+
+  walkAST(root, (node: unknown) => {
     if (node !== targetNode && node && typeof node === 'object') {
       for (const key in node) {
         const value = node[key];
@@ -127,14 +141,70 @@ function getParentNode(root: any, targetNode: any): any {
       }
     }
   });
-  
+
   return parent;
 }
 
 /**
  * Determine the context of an identifier based on its parent node
  */
-function determineIdentifierContext(identifierNode: any, parentNode: any): SymbolOccurrence['context'] {
+function determineIdentifierContext(
+  identifierNode: unknown,
+  parentNode: unknown
+): SymbolOccurrence['context'] {
+  const _identifier = identifierNode as { type: string };
+  const parent = parentNode as {
+    type?: string;
+    callee?: unknown;
+    property?: unknown;
+    left?: unknown;
+  };
+
+  if (!parent?.type) {
+    return 'identifier';
+  }
+
+  switch (parent.type) {
+    case 'CallExpression':
+      // Check if this identifier is the callee
+      if (parent.callee === identifierNode) {
+        return 'function_call';
+      }
+      return 'identifier';
+
+    case 'MemberExpression':
+      // Check if this is the object being accessed (obj.prop vs obj.identifier)
+      if (parent.object === identifierNode) {
+        return 'property_access';
+      }
+      return 'identifier';
+
+    case 'AssignmentExpression':
+      if (parent.left === identifierNode) {
+        return 'assignment';
+      }
+      return 'identifier';
+
+    case 'ImportSpecifier':
+    case 'ImportDefaultSpecifier':
+    case 'ImportNamespaceSpecifier':
+      return 'import';
+
+    case 'ExportSpecifier':
+    case 'ExportDefaultDeclaration':
+    case 'ExportNamedDeclaration':
+      return 'export';
+
+    default:
+      return 'identifier';
+  }
+}
+
+// Legacy implementation that was replaced
+function _determineIdentifierContextOld(
+  identifierNode: unknown,
+  parentNode: unknown
+): SymbolOccurrence['context'] {
   if (!parentNode) {
     return 'identifier';
   }
@@ -179,7 +249,11 @@ function determineIdentifierContext(identifierNode: any, parentNode: any): Symbo
  * Fallback detection when OXC parsing fails
  * Still avoids strings but uses simpler logic
  */
-function fallbackSymbolDetection(lineContent: string, symbolName: string, lineNumber: number): SymbolOccurrence[] {
+function fallbackSymbolDetection(
+  lineContent: string,
+  symbolName: string,
+  lineNumber: number
+): SymbolOccurrence[] {
   // Skip obvious comments
   const trimmed = lineContent.trim();
   if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
@@ -224,12 +298,14 @@ function fallbackSymbolDetection(lineContent: string, symbolName: string, lineNu
   // Now check for symbol in clean content
   const regex = new RegExp(`\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
   if (regex.test(cleanContent)) {
-    return [{
-      name: symbolName,
-      line: lineNumber,
-      column: cleanContent.indexOf(symbolName),
-      context: 'identifier'
-    }];
+    return [
+      {
+        name: symbolName,
+        line: lineNumber,
+        column: cleanContent.indexOf(symbolName),
+        context: 'identifier',
+      },
+    ];
   }
 
   return [];

@@ -2,23 +2,20 @@
  * Git service for performing Git operations and integrating with dependency analysis
  */
 
-import { simpleGit } from 'simple-git';
 import type { SimpleGit } from 'simple-git';
-import { DiffParser } from './parsers/diff-parser';
-import { DependencyAnalyzer } from './dependency-analyzer';
-import { OxcSymbolExtractor, type OxcFileSymbols } from './oxc-symbol-extractor';
-import { 
-  extractSymbolReferencesFromContent, 
-  lineContainsAnySymbol,
-  type FileSymbolReferences 
-} from './utils/oxc-symbol-reference-extractor';
+import { simpleGit } from 'simple-git';
 import { APP_CONFIG } from './config';
-import { isSupportedSourceFile } from './utils/file-utils';
-import type { 
-  DiffLine, 
-  FileDiff
-} from './types/git';
+import { DependencyAnalyzer } from './dependency-analyzer';
+import { type OxcFileSymbols, OxcSymbolExtractor } from './oxc-symbol-extractor';
+import { DiffParser } from './parsers/diff-parser';
 import type { DependencyGraph } from './types/analysis';
+import type { FileDiff } from './types/git';
+import { isSupportedSourceFile } from './utils/file-utils';
+import {
+  extractSymbolReferencesFromContent,
+  type FileSymbolReferences,
+  lineContainsAnySymbol,
+} from './utils/oxc-symbol-reference-extractor';
 
 // Re-export types for backward compatibility
 export type { DiffLine, FileDiff } from './types/git';
@@ -53,10 +50,10 @@ export class GitService {
   private readonly diffParser: DiffParser;
   private readonly repoPath: string;
   private readonly git: SimpleGit;
-  
+
   // Cache for precomputed symbol references per file
   private readonly symbolReferencesCache = new Map<string, FileSymbolReferences>();
-  
+
   constructor(repoPath?: string) {
     this.repoPath = repoPath || APP_CONFIG.DEFAULT_REPO_PATH;
     this.git = simpleGit(this.repoPath);
@@ -70,14 +67,13 @@ export class GitService {
    */
   async getDiff(baseBranch: string, compareBranch: string): Promise<FileDiff[]> {
     const output = await this.git.diff([
-      '--no-color', 
-      '--unified=3', 
-      `${baseBranch}...${compareBranch}`
+      '--no-color',
+      '--unified=3',
+      `${baseBranch}...${compareBranch}`,
     ]);
 
     return this.diffParser.parse(output);
   }
-
 
   /**
    * Gets all available branches in the repository
@@ -99,23 +95,22 @@ export class GitService {
    */
   async getFilesInBranch(branch: string): Promise<string[]> {
     const output = await this.git.raw(['ls-tree', '-r', '--name-only', branch]);
-    return output.trim().split('\n').filter(file => 
-      file.trim() && isSupportedSourceFile(file)
-    );
+    return output
+      .trim()
+      .split('\n')
+      .filter((file) => file.trim() && isSupportedSourceFile(file));
   }
-
-
 
   /**
    * Gets diff files with simple symbol extraction from changed files only
    */
   async getOrderedFiles(
-    baseBranch: string, 
-    compareBranch: string, 
+    baseBranch: string,
+    compareBranch: string,
     orderType: 'top-down' | 'bottom-up' | 'alphabetical' = 'alphabetical'
   ): Promise<SimplifiedDiffResult> {
     const diff = await this.getDiff(baseBranch, compareBranch);
-    
+
     let sortedFiles: FileDiff[];
     if (orderType === 'alphabetical') {
       sortedFiles = this.sortFilesAlphabetically(diff);
@@ -123,20 +118,20 @@ export class GitService {
       // Use dependency analysis for ordering but don't expose the full graph
       sortedFiles = await this.sortFilesByDependencies(diff, compareBranch, orderType);
     }
-    
+
     // Extract symbols only from the changed files
     const symbols = await this.symbolExtractor.extractFromChangedFiles(sortedFiles, compareBranch);
-    
+
     // Precompute symbol references using OXC for fast lookups
     await this.precomputeSymbolReferences(symbols, sortedFiles);
-    
+
     // Pre-process symbol references to eliminate frontend processing
     const symbolReferences = await this.preprocessSymbolReferences(symbols, sortedFiles);
-    
-    return { 
+
+    return {
       files: sortedFiles,
       symbols,
-      symbolReferences
+      symbolReferences,
     };
   }
 
@@ -157,29 +152,30 @@ export class GitService {
   ): Promise<FileDiff[]> {
     try {
       // Extract changed filenames for smart loading
-      const changedFilenames = diff.map(d => d.filename);
-      
+      const changedFilenames = diff.map((d) => d.filename);
+
       // Build dependency graph with smart loading
       const graph = await this.analyzeDependencies(compareBranch, changedFilenames);
-      
+
       const orderedFilenames = this.dependencyAnalyzer.topologicalSort(
-        graph, 
+        graph,
         orderType === 'top-down'
       );
-      
-      const fileOrder = new Map(
-        orderedFilenames.map((file, index) => [file, index])
-      );
-      
+
+      const fileOrder = new Map(orderedFilenames.map((file, index) => [file, index]));
+
       const sorted = diff.sort((a, b) => {
         const orderA = fileOrder.get(a.filename) ?? 999999;
         const orderB = fileOrder.get(b.filename) ?? 999999;
         return orderA - orderB;
       });
-      
+
       return sorted;
     } catch (error) {
-      console.warn('Failed to analyze dependencies for ordering, falling back to alphabetical:', error);
+      console.warn(
+        'Failed to analyze dependencies for ordering, falling back to alphabetical:',
+        error
+      );
       return this.sortFilesAlphabetically(diff);
     }
   }
@@ -187,20 +183,23 @@ export class GitService {
   /**
    * Analyzes dependencies for relevant files only (smart loading)
    */
-  private async analyzeDependencies(branch: string, changedFiles?: string[]): Promise<DependencyGraph> {
+  private async analyzeDependencies(
+    branch: string,
+    changedFiles?: string[]
+  ): Promise<DependencyGraph> {
     let files: string[];
-    
+
     if (changedFiles && changedFiles.length > 0) {
       // Smart loading: get all files but prioritize changed files and their likely dependencies
       const allFiles = await this.getFilesInBranch(branch);
-      
+
       // Start with changed files
       const relevantFiles = new Set(changedFiles);
-      
+
       // Add files that might be imported by changed files (heuristic approach)
       for (const changedFile of changedFiles) {
         const dir = changedFile.substring(0, changedFile.lastIndexOf('/'));
-        
+
         // Add files in the same directory and common dependency patterns
         for (const file of allFiles) {
           if (
@@ -214,14 +213,14 @@ export class GitService {
           }
         }
       }
-      
+
       files = Array.from(relevantFiles);
       console.log(`Smart loading: reduced from ${allFiles.length} to ${files.length} files`);
     } else {
       // Fallback to loading all files
       files = await this.getFilesInBranch(branch);
     }
-    
+
     const fileContents = await this.loadFileContents(branch, files);
     return await this.dependencyAnalyzer.buildDependencyGraph(fileContents);
   }
@@ -229,10 +228,7 @@ export class GitService {
   /**
    * Loads contents for multiple files from a branch in parallel
    */
-  private async loadFileContents(
-    branch: string, 
-    files: string[]
-  ): Promise<Map<string, string>> {
+  private async loadFileContents(branch: string, files: string[]): Promise<Map<string, string>> {
     const fileContents = new Map<string, string>();
 
     // Load files in parallel instead of sequentially
@@ -247,7 +243,7 @@ export class GitService {
     });
 
     const results = await Promise.all(filePromises);
-    
+
     // Only add successfully loaded files to the map
     for (const result of results) {
       if (result.success) {
@@ -263,7 +259,7 @@ export class GitService {
    */
   private async loadFileContent(filename: string): Promise<string | null> {
     try {
-      const content = await this.git.show(['HEAD:' + filename]);
+      const content = await this.git.show([`HEAD:${filename}`]);
       return content;
     } catch (error) {
       console.warn(`Failed to load content for ${filename}:`, error);
@@ -274,11 +270,14 @@ export class GitService {
   /**
    * Precompute symbol references for all files using OXC
    */
-  private async precomputeSymbolReferences(symbols: OxcFileSymbols[], diffFiles: FileDiff[]): Promise<void> {
+  private async precomputeSymbolReferences(
+    symbols: OxcFileSymbols[],
+    diffFiles: FileDiff[]
+  ): Promise<void> {
     // Create set of all symbol names for efficient lookup
     const allSymbolNames = new Set<string>();
-    symbols.forEach(fileSymbols => {
-      fileSymbols.symbols.forEach(symbol => {
+    symbols.forEach((fileSymbols) => {
+      fileSymbols.symbols.forEach((symbol) => {
         allSymbolNames.add(symbol.name);
       });
     });
@@ -295,12 +294,16 @@ export class GitService {
         if (!content) return;
 
         // Extract all symbol references using OXC
-        const references = extractSymbolReferencesFromContent(content, file.filename, allSymbolNames);
-        
+        const references = extractSymbolReferencesFromContent(
+          content,
+          file.filename,
+          allSymbolNames
+        );
+
         // Cache the results
         this.symbolReferencesCache.set(file.filename, {
           filename: file.filename,
-          references
+          references,
         });
 
         console.log(`🔍 Precomputed ${references.length} symbol references in ${file.filename}`);
@@ -316,26 +319,30 @@ export class GitService {
    * Pre-process symbol references to eliminate expensive frontend processing
    */
   private async preprocessSymbolReferences(
-    symbols: OxcFileSymbols[], 
+    symbols: OxcFileSymbols[],
     diffFiles: FileDiff[]
   ): Promise<PreprocessedSymbol[]> {
     const preprocessedSymbols: PreprocessedSymbol[] = [];
-    
+
     // Create a map of all symbols for quick lookup
-    const allSymbols = new Map<string, { filename: string, symbol: any }>();
+    const allSymbols = new Map<string, { filename: string; symbol: OxcSymbol }>();
     for (const fileSymbols of symbols) {
       for (const symbol of fileSymbols.symbols) {
         allSymbols.set(symbol.name, {
           filename: fileSymbols.filename,
-          symbol
+          symbol,
         });
       }
     }
-    
+
     // Process each symbol to find its references across all diff files
     for (const [symbolName, symbolData] of allSymbols) {
-      const references = this.findSymbolReferencesInDiff(symbolName, symbolData.filename, diffFiles);
-      
+      const references = this.findSymbolReferencesInDiff(
+        symbolName,
+        symbolData.filename,
+        diffFiles
+      );
+
       // Only include symbols that have references in the PR (used somewhere)
       if (references.length > 0) {
         preprocessedSymbols.push({
@@ -345,11 +352,11 @@ export class GitService {
           type: symbolData.symbol.type,
           isExported: symbolData.symbol.isExported,
           className: symbolData.symbol.className,
-          references
+          references,
         });
       }
     }
-    
+
     return preprocessedSymbols;
   }
 
@@ -357,53 +364,60 @@ export class GitService {
    * Find symbol references across diff files (backend implementation)
    */
   private findSymbolReferencesInDiff(
-    symbolName: string, 
-    definitionFile: string, 
+    symbolName: string,
+    definitionFile: string,
     diffFiles: FileDiff[]
   ): SymbolReference[] {
     const references: SymbolReference[] = [];
-    
+
     for (const file of diffFiles) {
       // Skip the file where the symbol is defined
       if (file.filename === definitionFile) continue;
-      
+
       const language = this.detectLanguageFromFilename(file.filename);
       if (!this.isHighlightableLanguage(language)) continue;
-      
+
       // Search through diff lines for symbol usage
       for (const line of file.lines) {
         if (line.isHunkHeader) continue;
-        
+
         // Use OXC-based precise symbol detection
-        const lineNumber = line.type === 'added' ? line.lineNumber : 
-                         line.type === 'removed' ? line.oldLineNumber : 
-                         line.lineNumber || line.oldLineNumber;
-        
+        const lineNumber =
+          line.type === 'added'
+            ? line.lineNumber
+            : line.type === 'removed'
+              ? line.oldLineNumber
+              : line.lineNumber || line.oldLineNumber;
+
         if (this.lineContainsSymbol(line.content, symbolName, file.filename, lineNumber)) {
-          
           references.push({
             file: file.filename,
             line: lineNumber || 0,
-            type: line.type as any,
+            type: line.type as DiffLineType,
             context: this.determineUsageContext(line.content, symbolName),
-            content: line.content.trim()
+            content: line.content.trim(),
           });
         }
       }
     }
-    
+
     return references;
   }
 
   /**
    * Detect if a line contains a symbol (simple implementation)
    */
-  private lineContainsSymbol(lineContent: string, symbolName: string, filename?: string, lineNumber?: number): boolean {
+  private lineContainsSymbol(
+    _lineContent: string,
+    symbolName: string,
+    filename?: string,
+    lineNumber?: number
+  ): boolean {
     // Use precomputed OXC-based symbol references for precise detection
     if (filename && lineNumber && this.symbolReferencesCache.has(filename)) {
       return lineContainsAnySymbol(lineNumber, filename, [symbolName], this.symbolReferencesCache);
     }
-    
+
     // Fallback: if no precomputed data, assume it doesn't contain the symbol
     // This is safe - better to miss a reference than show false positives
     return false;
@@ -414,31 +428,31 @@ export class GitService {
    */
   private determineUsageContext(lineContent: string, symbolName: string): string {
     const line = lineContent.trim();
-    
+
     // Function call pattern
     if (line.includes(`${symbolName}(`)) {
       return 'function_call';
     }
-    
+
     // Property access
     if (line.includes(`.${symbolName}`) || line.includes(`${symbolName}.`)) {
       return 'property_access';
     }
-    
+
     // Assignment
     if (line.includes(`= ${symbolName}`) || line.includes(`${symbolName} =`)) {
       return 'assignment';
     }
-    
+
     // Import/export
     if (line.includes('import') && line.includes(symbolName)) {
       return 'import';
     }
-    
+
     if (line.includes('export') && line.includes(symbolName)) {
       return 'export';
     }
-    
+
     return 'reference';
   }
 
@@ -465,5 +479,4 @@ export class GitService {
   private isHighlightableLanguage(language: string): boolean {
     return ['typescript', 'javascript'].includes(language);
   }
-
 }

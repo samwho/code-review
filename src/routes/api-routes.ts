@@ -2,27 +2,22 @@
  * API route handlers for the Code Review application
  */
 
-import { GitService } from '../git';
-import { 
-  createJsonResponse, 
-  createErrorResponse, 
-  validateRequiredParams,
-  getQueryParam 
-} from '../utils/http-utils';
 import type { FileOrder } from '../config';
+import { GitService } from '../git';
+import {
+  createErrorResponse,
+  createJsonResponse,
+  getQueryParam,
+  validateRequiredParams,
+} from '../utils/http-utils';
 
 export class ApiRoutes {
-  constructor() {}
-
   /**
    * Get GitService instance for the specified repository
    */
   private getGitService(repository?: string): GitService {
-    if (!repository) {
-      repository = 'basic-typescript-api'; // Default repository
-    }
-    
-    const repoPath = `/home/sam/code-review/test-repos/${repository}`;
+    const repoName = repository || 'basic-typescript-api'; // Default repository
+    const repoPath = `/home/sam/code-review/test-repos/${repoName}`;
     return new GitService(repoPath);
   }
 
@@ -38,13 +33,13 @@ export class ApiRoutes {
       switch (url.pathname) {
         case '/api/branches':
           return await this.handleBranchesRequest(url);
-        
+
         case '/api/diff':
           return await this.handleDiffRequest(url);
-        
+
         case '/api/dependencies':
           return await this.handleDependenciesRequest(url);
-        
+
         default:
           return createErrorResponse('API endpoint not found', 404);
       }
@@ -59,13 +54,13 @@ export class ApiRoutes {
    * Handles CORS preflight OPTIONS requests
    */
   private handleOptionsRequest(): Response {
-    return new Response(null, { 
-      status: 200, 
+    return new Response(null, {
+      status: 200,
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
-      }
+      },
     });
   }
 
@@ -84,10 +79,10 @@ export class ApiRoutes {
    */
   private async handleDiffRequest(url: URL): Promise<Response> {
     const validation = validateRequiredParams(url, ['base', 'compare']);
-    
+
     if (!validation.isValid) {
       return createErrorResponse(
-        `Missing required parameters: ${validation.missing.join(', ')}`, 
+        `Missing required parameters: ${validation.missing.join(', ')}`,
         400
       );
     }
@@ -107,7 +102,7 @@ export class ApiRoutes {
    */
   private async handleDependenciesRequest(url: URL): Promise<Response> {
     const validation = validateRequiredParams(url, ['branch']);
-    
+
     if (!validation.isValid) {
       return createErrorResponse('Branch parameter is required', 400);
     }
@@ -116,17 +111,16 @@ export class ApiRoutes {
     const branch = getQueryParam(url, 'branch');
     const gitService = this.getGitService(repository);
     const graph = await gitService.analyzeDependencies(branch);
-    
+
     // Convert to serializable format
     const serializedGraph = {
       nodes: Array.from(graph.nodes.entries()).map(([filename, analysis]) => ({
         filename,
-        ...analysis
+        ...analysis,
       })),
-      edges: graph.edges
+      edges: graph.edges,
     };
-    
+
     return createJsonResponse(serializedGraph);
   }
-
 }

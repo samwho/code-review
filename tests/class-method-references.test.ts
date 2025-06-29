@@ -1,5 +1,4 @@
-import { describe, it, expect } from 'bun:test';
-import { GitService } from '../src/git';
+import { describe, expect, it } from 'bun:test';
 import { extractSymbolReferencesFromContent } from '../src/utils/oxc-symbol-reference-extractor';
 
 describe('Class Method Reference Detection', () => {
@@ -35,16 +34,16 @@ authService.register(newUser);
 
       // Test symbol names we're looking for
       const symbolNames = new Set(['AuthService', 'login', 'register', 'post']);
-      
+
       const references = extractSymbolReferencesFromContent(
-        testFileContent, 
-        'auth-service.ts', 
+        testFileContent,
+        'auth-service.ts',
         symbolNames
       );
 
       // Group references by symbol name for easier testing
       const refsBySymbol = new Map<string, any[]>();
-      references.forEach(ref => {
+      references.forEach((ref) => {
         if (!refsBySymbol.has(ref.name)) {
           refsBySymbol.set(ref.name, []);
         }
@@ -54,7 +53,7 @@ authService.register(newUser);
       // Test AuthService class references
       const authServiceRefs = refsBySymbol.get('AuthService') || [];
       console.log('AuthService references:', authServiceRefs);
-      
+
       // Should find:
       // 1. new AuthService() - constructor call (line will vary based on content)
       // Should NOT find the class definition itself (that's a definition, not a reference)
@@ -62,10 +61,10 @@ authService.register(newUser);
       expect(authServiceRefs[0].line).toBeGreaterThan(20); // Should be in the usage section
       expect(authServiceRefs[0].context).toBe('identifier'); // In 'new AuthService()'
 
-      // Test login method references  
+      // Test login method references
       const loginRefs = refsBySymbol.get('login') || [];
       console.log('login references:', loginRefs);
-      
+
       // Should find:
       // 1. authService.login(userCreds) - method call
       // Should NOT find the method definition
@@ -76,9 +75,9 @@ authService.register(newUser);
       // Test register method references
       const registerRefs = refsBySymbol.get('register') || [];
       console.log('register references:', registerRefs);
-      
+
       // Should find:
-      // 1. authService.register(newUser) - method call  
+      // 1. authService.register(newUser) - method call
       // Should NOT find the method definition
       // Should NOT find "/auth/register" in the string literal
       expect(registerRefs.length).toBe(1);
@@ -88,13 +87,13 @@ authService.register(newUser);
       // Test private method references
       const postRefs = refsBySymbol.get('post') || [];
       console.log('post references:', postRefs);
-      
+
       // Should find:
-      // 1. this.post('/auth/login', credentials) 
+      // 1. this.post('/auth/login', credentials)
       // 2. this.post('/auth/register', userData)
       // Should NOT find the method definition
       expect(postRefs.length).toBe(2);
-      postRefs.forEach(ref => {
+      postRefs.forEach((ref) => {
         expect(ref.line).toBeGreaterThan(5); // Should be in method bodies
         expect(ref.line).toBeLessThan(20); // But before usage section
         expect(ref.context).toBe('property_access');
@@ -102,10 +101,10 @@ authService.register(newUser);
     });
 
     it('should not confuse class name with method names in symbol preprocessing', () => {
-      // This test checks the specific bug where class method references 
+      // This test checks the specific bug where class method references
       // incorrectly show the class definition instead of method references
-      
-      const classContent = `
+
+      const _classContent = `
 class UserService {
   findUser(id: string) {
     return this.database.findById(id);
@@ -122,16 +121,16 @@ const user = userService.findUser('123');
 
       // Extract references from the usage file
       const symbolNames = new Set(['UserService', 'findUser']);
-      
+
       const references = extractSymbolReferencesFromContent(
         usageContent,
-        'user-controller.ts', 
+        'user-controller.ts',
         symbolNames
       );
 
       // Group by symbol
       const refsBySymbol = new Map<string, any[]>();
-      references.forEach(ref => {
+      references.forEach((ref) => {
         if (!refsBySymbol.has(ref.name)) {
           refsBySymbol.set(ref.name, []);
         }
@@ -144,16 +143,16 @@ const user = userService.findUser('123');
       // UserService should appear in import and constructor
       const userServiceRefs = refsBySymbol.get('UserService') || [];
       expect(userServiceRefs.length).toBeGreaterThan(0);
-      
+
       // findUser should appear in method call, not confused with UserService
       const findUserRefs = refsBySymbol.get('findUser') || [];
       expect(findUserRefs.length).toBe(1);
       expect(findUserRefs[0].line).toBeGreaterThan(3); // Should be in usage section
       expect(findUserRefs[0].context).toBe('property_access');
-      
+
       // Most importantly: findUser reference should NOT point to UserService class definition
       // This is the bug we're trying to catch
-      findUserRefs.forEach(ref => {
+      findUserRefs.forEach((ref) => {
         expect(ref.name).toBe('findUser'); // Should be 'findUser', not 'UserService'
       });
     });

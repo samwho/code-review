@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'bun:test';
-import { lineContainsSymbolPrecise, findSymbolReferencesInLine } from '../src/utils/oxc-line-analyzer';
+import { describe, expect, it } from 'bun:test';
+import { lineContainsSymbolPrecise } from '../src/utils/oxc-line-analyzer';
 
 // We need to create a test helper that exposes the private method for testing
 class GitServiceTestHelper {
@@ -9,7 +9,7 @@ class GitServiceTestHelper {
     if (lineContent.trim().startsWith('//') || lineContent.trim().startsWith('*')) {
       return false;
     }
-    
+
     // Look for symbol as whole word, not part of another identifier
     const regex = new RegExp(`\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
     return regex.test(lineContent);
@@ -18,20 +18,22 @@ class GitServiceTestHelper {
   // This is the new optimized version (fast regex with smart string detection)
   public lineContainsSymbol(lineContent: string, symbolName: string): boolean {
     // Fast string-based detection with improved accuracy (no expensive parsing)
-    
+
     // Skip obvious comments
     const trimmed = lineContent.trim();
     if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
       return false;
     }
-    
+
     // Quick string literal detection - look for symbol inside quotes
     // This handles the most common false positive: "/auth/register"
-    const quotedRegex = new RegExp(`['"\`][^'"\`]*\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b[^'"\`]*['"\`]`);
+    const quotedRegex = new RegExp(
+      `['"\`][^'"\`]*\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b[^'"\`]*['"\`]`
+    );
     if (quotedRegex.test(lineContent)) {
       return false; // Symbol is inside quotes, ignore it
     }
-    
+
     // Look for symbol as whole word, not part of another identifier
     const regex = new RegExp(`\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
     return regex.test(lineContent);
@@ -53,29 +55,29 @@ describe('Symbol Reference Precision - Current Issues', () => {
           line: '  return fetch("/auth/register", {',
           symbol: 'register',
           shouldFind: false,
-          description: 'symbol inside string literal'
+          description: 'symbol inside string literal',
         },
         {
           line: '  const url = "api/user/register";',
-          symbol: 'register', 
-          shouldFind: false,
-          description: 'symbol inside string literal with quotes'
-        },
-        {
-          line: '  const template = `Hello ${user}, please register at /register`;',
           symbol: 'register',
           shouldFind: false,
-          description: 'symbol inside template literal'
+          description: 'symbol inside string literal with quotes',
+        },
+        {
+          line: '  const template = `Hello $' + '{user}, please register at /register`;',
+          symbol: 'register',
+          shouldFind: false,
+          description: 'symbol inside template literal',
         },
         {
           line: "  console.log('register function called');",
           symbol: 'register',
           shouldFind: false,
-          description: 'symbol inside single-quoted string'
-        }
+          description: 'symbol inside single-quoted string',
+        },
       ];
 
-      testCases.forEach(({ line, symbol, shouldFind, description }) => {
+      testCases.forEach(({ line, symbol, shouldFind }) => {
         const result = helper.lineContainsSymbol(line, symbol);
         expect(result).toBe(shouldFind);
       });
@@ -86,18 +88,18 @@ describe('Symbol Reference Precision - Current Issues', () => {
         {
           line: '// Function to register users',
           symbol: 'register',
-          shouldFind: false
+          shouldFind: false,
         },
         {
           line: '/* register function implementation */',
           symbol: 'register',
-          shouldFind: false
+          shouldFind: false,
         },
         {
           line: ' * Call register to sign up',
-          symbol: 'register', 
-          shouldFind: false
-        }
+          symbol: 'register',
+          shouldFind: false,
+        },
       ];
 
       testCases.forEach(({ line, symbol, shouldFind }) => {
@@ -112,29 +114,29 @@ describe('Symbol Reference Precision - Current Issues', () => {
           line: 'register(newUser);',
           symbol: 'register',
           shouldFind: true,
-          description: 'function call'
+          description: 'function call',
         },
         {
           line: 'const fn = register;',
           symbol: 'register',
           shouldFind: true,
-          description: 'variable assignment'
+          description: 'variable assignment',
         },
         {
           line: 'export { register };',
           symbol: 'register',
           shouldFind: true,
-          description: 'export statement'
+          description: 'export statement',
         },
         {
           line: 'if (register) {',
           symbol: 'register',
           shouldFind: true,
-          description: 'conditional usage'
-        }
+          description: 'conditional usage',
+        },
       ];
 
-      testCases.forEach(({ line, symbol, shouldFind, description }) => {
+      testCases.forEach(({ line, symbol, shouldFind }) => {
         const result = helper.lineContainsSymbol(line, symbol);
         expect(result).toBe(shouldFind);
       });
@@ -149,11 +151,11 @@ describe('Symbol Reference Precision - Current Issues', () => {
         { line: '  return fetch("/auth/register", {', symbol: 'register', expected: false },
         { line: '// Function to register users', symbol: 'register', expected: false },
         { line: '  const url = "register";', symbol: 'register', expected: false },
-        
+
         // Should find
         { line: 'register(newUser);', symbol: 'register', expected: true },
         { line: 'const fn = register;', symbol: 'register', expected: true },
-        { line: 'export { register };', symbol: 'register', expected: true }
+        { line: 'export { register };', symbol: 'register', expected: true },
       ];
 
       testCases.forEach(({ line, symbol, expected }) => {
