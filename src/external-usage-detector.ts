@@ -32,6 +32,9 @@ export class ExternalUsageDetector {
   private project: Project;
   private repoPath: string;
   private symbolExtractor: SimpleSymbolExtractor;
+  private fileListCache: string[] | null = null;
+  private fileListCacheTime = 0;
+  private readonly CACHE_TTL = 30000; // 30 seconds
 
   constructor(repoPath?: string) {
     this.repoPath = repoPath || process.cwd() + '/test-repo';
@@ -73,16 +76,27 @@ export class ExternalUsageDetector {
 
     const affectedFiles: ExternalUsageResult['affectedFiles'] = [];
 
-    // Scan each file for usages of modified symbols
-    for (const filePath of filesToScan) {
-      const usages = await this.scanFileForUsages(filePath, modifiedSymbols);
+    // Scan files in parallel batches for better performance
+    const BATCH_SIZE = 10; // Process 10 files at a time
+    const batches = this.createBatches(filesToScan, BATCH_SIZE);
+    
+    for (const batch of batches) {
+      const batchResults = await Promise.all(
+        batch.map(filePath => this.scanFileForUsages(filePath, modifiedSymbols))
+      );
       
-      if (usages.length > 0) {
-        affectedFiles.push({
-          filename: filePath,
-          usages,
-          impactLevel: this.calculateImpactLevel(usages)
-        });
+      // Process batch results
+      for (let i = 0; i < batch.length; i++) {
+        const filePath = batch[i];
+        const usages = batchResults[i];
+        
+        if (usages.length > 0) {
+          affectedFiles.push({
+            filename: filePath,
+            usages,
+            impactLevel: this.calculateImpactLevel(usages)
+          });
+        }
       }
     }
 
@@ -105,9 +119,25 @@ export class ExternalUsageDetector {
   }
 
   /**
-   * Get all TypeScript/JavaScript source files in the repository
+   * Create batches of items for parallel processing
+   */
+  private createBatches<T>(items: T[], batchSize: number): T[][] {
+    const batches: T[][] = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+      batches.push(items.slice(i, i + batchSize));
+    }
+    return batches;
+  }
+
+  /**
+   * Get all TypeScript/JavaScript source files in the repository (with caching)
    */
   private async getAllSourceFiles(): Promise<string[]> {
+    // Check cache first
+    const now = Date.now();
+    if (this.fileListCache && (now - this.fileListCacheTime) < this.CACHE_TTL) {
+      return this.fileListCache;
+    }
     try {
       // Use git to find all tracked files, then filter for source files
       const proc = spawn(['git', 'ls-files'], {
@@ -129,6 +159,10 @@ export class ExternalUsageDetector {
         const ext = file.split('.').pop()?.toLowerCase();
         return ext && ['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs'].includes(ext);
       });
+
+      // Cache the result
+      this.fileListCache = sourceFiles;
+      this.fileListCacheTime = now;
 
       return sourceFiles;
     } catch (error) {

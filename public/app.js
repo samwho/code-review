@@ -16,7 +16,25 @@ class DiffViewer {
       showVariables: false
     };
 
+    // Performance optimizations
+    this.debouncedRefreshHighlighting = this.debounce(this.refreshSymbolHighlighting.bind(this), 300);
+
     this.init();
+  }
+
+  /**
+   * Debounce function to limit rapid successive calls
+   */
+  debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
+    };
   }
 
   async init() {
@@ -38,11 +56,18 @@ class DiffViewer {
       this.populateBranchSelect(this.compareBranchSelect, branches);
       
       // Set default selections
-      if (branches.includes('master')) {
+      // Base branch: prefer main, fallback to master
+      if (branches.includes('main')) {
+        this.baseBranchSelect.value = 'main';
+      } else if (branches.includes('master')) {
         this.baseBranchSelect.value = 'master';
       }
-      if (branches.includes('feature/improvements')) {
-        this.compareBranchSelect.value = 'feature/improvements';
+      
+      // Compare branch: select the first non-main/master branch
+      const mainBranches = ['main', 'master'];
+      const compareBranch = branches.find(branch => !mainBranches.includes(branch));
+      if (compareBranch) {
+        this.compareBranchSelect.value = compareBranch;
       }
     } catch (error) {
       this.showError('Failed to load branches: ' + error.message);
@@ -145,6 +170,7 @@ class DiffViewer {
   createFileElement(file, index) {
     const fileDiv = document.createElement('div');
     fileDiv.className = 'file-diff';
+    fileDiv.setAttribute('data-filename', file.filename);
 
     const header = document.createElement('div');
     header.className = 'file-header';
@@ -364,14 +390,38 @@ class DiffViewer {
       this.highlightToggle.title = 'Show variable highlighting';
     }
     
-    // Re-render the current diff to apply new highlighting
-    if (this.currentDiffFiles) {
-      this.diffContainer.innerHTML = '';
-      this.renderDiff({ 
-        files: this.currentDiffFiles, 
-        symbols: this.fileSymbols 
-      }, this.currentOrder || 'alphabetical');
-    }
+    // Re-apply highlighting without full re-render for better performance (debounced)
+    this.debouncedRefreshHighlighting();
+  }
+
+  /**
+   * Refresh symbol highlighting without full diff re-render
+   */
+  refreshSymbolHighlighting() {
+    if (!this.currentDiffFiles || !this.fileSymbols) return;
+    
+    // Clear existing symbol highlighting
+    this.diffContainer.querySelectorAll('.symbol-interactive').forEach(element => {
+      element.classList.remove('symbol-interactive', 'symbol-modified', 'symbol-used-in-pr');
+      element.removeAttribute('data-symbol');
+    });
+    
+    // Remove existing tooltips
+    document.querySelectorAll('.symbol-tooltip').forEach(tooltip => {
+      if (tooltip.parentNode) {
+        tooltip.parentNode.removeChild(tooltip);
+      }
+    });
+    
+    // Re-apply symbol highlighting to existing content
+    this.currentDiffFiles.forEach(file => {
+      const contentCells = this.diffContainer.querySelectorAll(`[data-filename="${file.filename}"] .line-content`);
+      contentCells.forEach(cell => {
+        if (this.isHighlightableLanguage(this.detectLanguage(file.filename))) {
+          this.addSymbolTooltips(cell, file.filename);
+        }
+      });
+    });
   }
 
   addSymbolTooltips(contentCell, currentFile) {

@@ -4,6 +4,7 @@
  */
 
 import { Project } from 'ts-morph';
+import { createHash } from 'crypto';
 import type { FileDiff } from './types/git';
 
 export type SimpleSymbol = 
@@ -35,6 +36,8 @@ export interface FileSymbols {
 export class SimpleSymbolExtractor {
   private project: Project;
   private repoPath: string;
+  private cache = new Map<string, FileSymbols>();
+  private fileHashCache = new Map<string, string>();
 
   constructor(repoPath?: string) {
     this.repoPath = repoPath || process.cwd() + '/test-repo';
@@ -50,30 +53,99 @@ export class SimpleSymbolExtractor {
   }
 
   /**
-   * Extract symbols from changed files only
+   * Generate cache key for file content
+   */
+  private generateCacheKey(filename: string, content: string): string {
+    const contentHash = createHash('md5').update(content).digest('hex');
+    return `${filename}:${contentHash}`;
+  }
+
+  /**
+   * Extract symbols from changed files only (with caching)
    */
   async extractFromChangedFiles(files: FileDiff[], baseBranch: string): Promise<FileSymbols[]> {
     const result: FileSymbols[] = [];
+    const uncachedFiles: FileDiff[] = [];
 
+    // Check cache first
     for (const file of files) {
       if (this.isSupportedFile(file.filename)) {
         try {
           const content = await this.getFileContent(file.filename, baseBranch);
-          const symbols = this.extractSymbolsFromContent(content, file.filename);
+          const cacheKey = this.generateCacheKey(file.filename, content);
           
-          if (symbols.length > 0) {
-            result.push({
-              filename: file.filename,
-              symbols
-            });
+          const cached = this.cache.get(cacheKey);
+          if (cached) {
+            result.push(cached);
+          } else {
+            uncachedFiles.push(file);
+            // Store content for later processing
+            this.fileHashCache.set(file.filename, content);
           }
         } catch (error) {
-          console.warn(`Failed to extract symbols from ${file.filename}:`, error);
+          console.warn(`Failed to get content for ${file.filename}:`, error);
         }
       }
     }
 
+    // Process uncached files in parallel batches
+    if (uncachedFiles.length > 0) {
+      const BATCH_SIZE = 5; // Process 5 files at a time to avoid memory issues
+      const batches = this.createBatches(uncachedFiles, BATCH_SIZE);
+      
+      for (const batch of batches) {
+        const batchResults = await Promise.all(
+          batch.map(file => this.processFileWithCaching(file, baseBranch))
+        );
+        
+        result.push(...batchResults.filter(r => r !== null) as FileSymbols[]);
+      }
+    }
+
     return result;
+  }
+
+  /**
+   * Create batches of items for parallel processing
+   */
+  private createBatches<T>(items: T[], batchSize: number): T[][] {
+    const batches: T[][] = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+      batches.push(items.slice(i, i + batchSize));
+    }
+    return batches;
+  }
+
+  /**
+   * Process a single file and cache the result
+   */
+  private async processFileWithCaching(file: FileDiff, baseBranch: string): Promise<FileSymbols | null> {
+    try {
+      const content = this.fileHashCache.get(file.filename) || await this.getFileContent(file.filename, baseBranch);
+      const cacheKey = this.generateCacheKey(file.filename, content);
+      
+      const symbols = this.extractSymbolsFromContent(content, file.filename);
+      
+      if (symbols.length > 0) {
+        const fileSymbols: FileSymbols = {
+          filename: file.filename,
+          symbols
+        };
+        
+        // Cache the result
+        this.cache.set(cacheKey, fileSymbols);
+        
+        return fileSymbols;
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn(`Failed to extract symbols from ${file.filename}:`, error);
+      return null;
+    } finally {
+      // Clean up temporary content cache
+      this.fileHashCache.delete(file.filename);
+    }
   }
 
   /**
