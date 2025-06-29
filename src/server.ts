@@ -13,14 +13,12 @@ import { StaticRoutes } from './routes/static-routes';
 import { APP_CONFIG } from './config';
 
 export class CodeReviewServer {
-  private gitService: GitService;
   private apiRoutes: ApiRoutes;
   private staticRoutes: StaticRoutes;
   private port: number;
 
   constructor(port?: number) {
     this.port = port || Number(process.env.PORT) || APP_CONFIG.DEFAULT_PORT;
-    this.gitService = new GitService();
     this.apiRoutes = new ApiRoutes();
     this.staticRoutes = new StaticRoutes();
   }
@@ -36,7 +34,7 @@ export class CodeReviewServer {
     });
 
     console.log(`Code Review UI server running at http://${APP_CONFIG.HOSTNAME}:${this.port}`);
-    console.log(`Available branches: ${(await this.gitService.getBranches()).join(', ')}`);
+    console.log(`Available repositories: basic-typescript-api, react-components-library, backend-service-refactor, utility-library-breaking-changes`);
   }
 
   /**

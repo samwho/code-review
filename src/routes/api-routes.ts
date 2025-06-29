@@ -3,6 +3,7 @@
  */
 
 import { GitService } from '../git';
+import { ExternalUsageDetector } from '../external-usage-detector';
 import { 
   createJsonResponse, 
   createErrorResponse, 
@@ -12,10 +13,22 @@ import {
 import type { FileOrder } from '../config';
 
 export class ApiRoutes {
-  private gitService: GitService;
+  private externalUsageDetector: ExternalUsageDetector;
 
   constructor() {
-    this.gitService = new GitService();
+    this.externalUsageDetector = new ExternalUsageDetector();
+  }
+
+  /**
+   * Get GitService instance for the specified repository
+   */
+  private getGitService(repository?: string): GitService {
+    if (!repository) {
+      repository = 'basic-typescript-api'; // Default repository
+    }
+    
+    const repoPath = `/home/sam/code-review/test-repos/${repository}`;
+    return new GitService(repoPath);
   }
 
   /**
@@ -29,13 +42,16 @@ export class ApiRoutes {
     try {
       switch (url.pathname) {
         case '/api/branches':
-          return await this.handleBranchesRequest();
+          return await this.handleBranchesRequest(url);
         
         case '/api/diff':
           return await this.handleDiffRequest(url);
         
         case '/api/dependencies':
           return await this.handleDependenciesRequest(url);
+        
+        case '/api/external-usages':
+          return await this.handleExternalUsagesRequest(url);
         
         default:
           return createErrorResponse('API endpoint not found', 404);
@@ -64,8 +80,10 @@ export class ApiRoutes {
   /**
    * Returns list of available Git branches
    */
-  private async handleBranchesRequest(): Promise<Response> {
-    const branches = await this.gitService.getBranches();
+  private async handleBranchesRequest(url: URL): Promise<Response> {
+    const repository = getQueryParam(url, 'repository');
+    const gitService = this.getGitService(repository);
+    const branches = await gitService.getBranches();
     return createJsonResponse(branches);
   }
 
@@ -82,11 +100,13 @@ export class ApiRoutes {
       );
     }
 
+    const repository = getQueryParam(url, 'repository');
     const baseBranch = getQueryParam(url, 'base');
     const compareBranch = getQueryParam(url, 'compare');
     const order = getQueryParam(url, 'order', 'alphabetical') as FileOrder;
 
-    const result = await this.gitService.getOrderedFiles(baseBranch, compareBranch, order);
+    const gitService = this.getGitService(repository);
+    const result = await gitService.getOrderedFiles(baseBranch, compareBranch, order);
     return createJsonResponse(result);
   }
 
@@ -100,8 +120,10 @@ export class ApiRoutes {
       return createErrorResponse('Branch parameter is required', 400);
     }
 
+    const repository = getQueryParam(url, 'repository');
     const branch = getQueryParam(url, 'branch');
-    const graph = await this.gitService.analyzeDependencies(branch);
+    const gitService = this.getGitService(repository);
+    const graph = await gitService.analyzeDependencies(branch);
     
     // Convert to serializable format
     const serializedGraph = {
@@ -113,5 +135,42 @@ export class ApiRoutes {
     };
     
     return createJsonResponse(serializedGraph);
+  }
+
+  /**
+   * Returns external usages of symbols modified in a pull request
+   */
+  private async handleExternalUsagesRequest(url: URL): Promise<Response> {
+    const validation = validateRequiredParams(url, ['base', 'compare']);
+    
+    if (!validation.isValid) {
+      return createErrorResponse(
+        `Missing required parameters: ${validation.missing.join(', ')}`, 
+        400
+      );
+    }
+
+    const repository = getQueryParam(url, 'repository');
+    const baseBranch = getQueryParam(url, 'base');
+    const compareBranch = getQueryParam(url, 'compare');
+    const order = getQueryParam(url, 'order', 'alphabetical') as FileOrder;
+
+    const gitService = this.getGitService(repository);
+    
+    // First get the diff to understand what symbols were modified
+    const diffResult = await gitService.getOrderedFiles(baseBranch, compareBranch, order);
+    
+    if (!diffResult.symbols || diffResult.symbols.length === 0) {
+      return createJsonResponse({
+        affectedFiles: [],
+        totalFiles: 0,
+        scanDuration: 0
+      });
+    }
+
+    // Find external usages of the modified symbols
+    const externalUsages = await this.externalUsageDetector.findExternalUsages(diffResult.symbols);
+    
+    return createJsonResponse(externalUsages);
   }
 }

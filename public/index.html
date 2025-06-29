@@ -12,6 +12,17 @@
             <h1>Code Review</h1>
         </div>
         <div class="header-center">
+            <div class="repo-selector">
+                <div>
+                    <label for="repository">Repository:</label>
+                    <select id="repository">
+                        <option value="basic-typescript-api">Basic TypeScript API</option>
+                        <option value="react-components-library">React Components Library</option>
+                        <option value="backend-service-refactor">Backend Service Refactor</option>
+                        <option value="utility-library-breaking-changes">Utility Library Breaking Changes</option>
+                    </select>
+                </div>
+            </div>
             <div class="branch-selector">
                 <div>
                     <label for="base-branch">Base:</label>
@@ -50,6 +61,20 @@
         
         <div class="diff-container" id="diff-container">
             <!-- Diff content will be populated here -->
+        </div>
+
+        <div class="affected-files-section" id="affected-files-section" style="display: none;">
+            <div class="affected-files-header">
+                <h2>📁 Files Affected by Changes</h2>
+                <div class="affected-files-stats" id="affected-files-stats"></div>
+            </div>
+            <div class="affected-files-loading" id="affected-files-loading" style="display: none;">
+                <div class="spinner"></div>
+                Scanning codebase for external usages...
+            </div>
+            <div class="affected-files-content" id="affected-files-content">
+                <!-- Affected files will be populated here -->
+            </div>
         </div>
     </main>
 

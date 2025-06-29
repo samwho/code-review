@@ -1,5 +1,6 @@
 class DiffViewer {
   constructor() {
+    this.repositorySelect = document.getElementById('repository');
     this.baseBranchSelect = document.getElementById('base-branch');
     this.compareBranchSelect = document.getElementById('compare-branch');
     this.fileOrderSelect = document.getElementById('file-order');
@@ -20,6 +21,7 @@ class DiffViewer {
 
   async init() {
     await this.loadBranches();
+    this.repositorySelect.addEventListener('change', () => this.loadBranches());
     this.loadDiffButton.addEventListener('click', () => this.loadDiff());
     this.themeToggle.addEventListener('click', () => this.toggleTheme());
     this.highlightToggle.addEventListener('click', () => this.toggleHighlighting());
@@ -28,7 +30,8 @@ class DiffViewer {
 
   async loadBranches() {
     try {
-      const response = await fetch('/api/branches');
+      const repository = this.repositorySelect.value;
+      const response = await fetch(`/api/branches?repository=${encodeURIComponent(repository)}`);
       const branches = await response.json();
       
       this.populateBranchSelect(this.baseBranchSelect, branches);
@@ -57,6 +60,7 @@ class DiffViewer {
   }
 
   async loadDiff() {
+    const repository = this.repositorySelect.value;
     const baseBranch = this.baseBranchSelect.value;
     const compareBranch = this.compareBranchSelect.value;
     const order = this.fileOrderSelect.value;
@@ -73,16 +77,26 @@ class DiffViewer {
 
     this.showLoading(true);
     this.diffContainer.innerHTML = '';
+    this.hideAffectedFiles();
 
     try {
-      const response = await fetch(`/api/diff?base=${encodeURIComponent(baseBranch)}&compare=${encodeURIComponent(compareBranch)}&order=${encodeURIComponent(order)}`);
+      // Fetch diff and external usages in parallel
+      const [diffResponse, externalUsagesPromise] = await Promise.allSettled([
+        fetch(`/api/diff?repository=${encodeURIComponent(repository)}&base=${encodeURIComponent(baseBranch)}&compare=${encodeURIComponent(compareBranch)}&order=${encodeURIComponent(order)}`),
+        this.fetchExternalUsages(repository, baseBranch, compareBranch, order)
+      ]);
       
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      // Handle diff response
+      if (diffResponse.status === 'rejected' || !diffResponse.value.ok) {
+        throw new Error(`HTTP ${diffResponse.value?.status}: ${diffResponse.value?.statusText}`);
       }
       
-      const result = await response.json();
+      const result = await diffResponse.value.json();
       this.renderDiff(result, order);
+
+      // Handle external usages (async, don't block diff rendering)
+      this.handleExternalUsages(externalUsagesPromise);
+      
     } catch (error) {
       this.showError('Failed to load diff: ' + error.message);
     } finally {
@@ -793,6 +807,215 @@ class DiffViewer {
         break;
       }
     }
+  }
+
+  /**
+   * Fetch external usages of symbols modified in the PR
+   */
+  async fetchExternalUsages(repository, baseBranch, compareBranch, order) {
+    try {
+      const response = await fetch(`/api/external-usages?repository=${encodeURIComponent(repository)}&base=${encodeURIComponent(baseBranch)}&compare=${encodeURIComponent(compareBranch)}&order=${encodeURIComponent(order)}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.warn('Failed to fetch external usages:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Handle external usages response
+   */
+  async handleExternalUsages(externalUsagesPromise) {
+    this.showAffectedFilesLoading();
+
+    try {
+      const result = await externalUsagesPromise;
+      
+      if (result.status === 'fulfilled' && result.value) {
+        this.renderAffectedFiles(result.value);
+      } else {
+        console.warn('External usages failed:', result.reason);
+        this.showAffectedFilesEmpty('Failed to scan codebase for external usages.');
+      }
+    } catch (error) {
+      console.warn('Failed to handle external usages:', error);
+      this.showAffectedFilesEmpty('Failed to scan codebase for external usages.');
+    }
+  }
+
+  /**
+   * Show the affected files section with loading state
+   */
+  showAffectedFilesLoading() {
+    const section = document.getElementById('affected-files-section');
+    const loading = document.getElementById('affected-files-loading');
+    const content = document.getElementById('affected-files-content');
+    
+    section.style.display = 'block';
+    loading.style.display = 'flex';
+    content.innerHTML = '';
+  }
+
+  /**
+   * Hide the affected files section
+   */
+  hideAffectedFiles() {
+    const section = document.getElementById('affected-files-section');
+    section.style.display = 'none';
+  }
+
+  /**
+   * Show empty state for affected files
+   */
+  showAffectedFilesEmpty(message) {
+    const section = document.getElementById('affected-files-section');
+    const loading = document.getElementById('affected-files-loading');
+    const content = document.getElementById('affected-files-content');
+    
+    loading.style.display = 'none';
+    content.innerHTML = `
+      <div class="affected-files-empty">
+        <div class="affected-files-empty-icon">📁</div>
+        <h3>No External Usages Found</h3>
+        <p>${message || 'The changes in this PR don\'t affect any other files in the codebase.'}</p>
+      </div>
+    `;
+    section.style.display = 'block';
+  }
+
+  /**
+   * Render the affected files section
+   */
+  renderAffectedFiles(externalUsageResult) {
+    const section = document.getElementById('affected-files-section');
+    const loading = document.getElementById('affected-files-loading');
+    const content = document.getElementById('affected-files-content');
+    const stats = document.getElementById('affected-files-stats');
+    
+    loading.style.display = 'none';
+
+    // Update stats
+    const { affectedFiles, totalFiles, scanDuration } = externalUsageResult;
+    stats.innerHTML = `
+      <span>${affectedFiles.length} affected files</span>
+      <span>•</span>
+      <span>${totalFiles} files scanned</span>
+      <span>•</span>
+      <span>${scanDuration}ms</span>
+    `;
+
+    if (affectedFiles.length === 0) {
+      this.showAffectedFilesEmpty();
+      return;
+    }
+
+    // Render affected files
+    content.innerHTML = '';
+    affectedFiles.forEach(affectedFile => {
+      const fileCard = this.createAffectedFileCard(affectedFile);
+      content.appendChild(fileCard);
+    });
+
+    section.style.display = 'block';
+  }
+
+  /**
+   * Create a card for an affected file
+   */
+  createAffectedFileCard(affectedFile) {
+    const card = document.createElement('div');
+    card.className = 'affected-file-card';
+    
+    const header = document.createElement('div');
+    header.className = 'affected-file-header';
+    
+    const info = document.createElement('div');
+    info.className = 'affected-file-info';
+    
+    const fileName = document.createElement('div');
+    fileName.className = 'affected-file-name';
+    fileName.textContent = affectedFile.filename;
+    
+    const impactBadge = document.createElement('span');
+    impactBadge.className = `impact-badge impact-${affectedFile.impactLevel}`;
+    impactBadge.textContent = affectedFile.impactLevel;
+    
+    info.appendChild(fileName);
+    info.appendChild(impactBadge);
+    
+    const stats = document.createElement('div');
+    stats.className = 'affected-file-stats';
+    stats.innerHTML = `
+      <span>${affectedFile.usages.length} usages</span>
+      <div class="affected-file-expand">▼</div>
+    `;
+    
+    header.appendChild(info);
+    header.appendChild(stats);
+    
+    const usages = document.createElement('div');
+    usages.className = 'affected-file-usages';
+    
+    affectedFile.usages.forEach(usage => {
+      const usageItem = this.createUsageItem(usage);
+      usages.appendChild(usageItem);
+    });
+    
+    card.appendChild(header);
+    card.appendChild(usages);
+    
+    // Toggle expand/collapse
+    header.addEventListener('click', () => {
+      card.classList.toggle('expanded');
+    });
+    
+    return card;
+  }
+
+  /**
+   * Create a usage item
+   */
+  createUsageItem(usage) {
+    const item = document.createElement('div');
+    item.className = 'usage-item';
+    
+    const symbol = document.createElement('div');
+    symbol.className = 'usage-symbol';
+    
+    const symbolName = document.createElement('span');
+    symbolName.className = 'usage-symbol-name';
+    symbolName.textContent = usage.symbol;
+    
+    const typeBadge = document.createElement('span');
+    typeBadge.className = 'usage-type-badge';
+    typeBadge.textContent = usage.usageType.replace('_', ' ');
+    
+    symbol.appendChild(symbolName);
+    symbol.appendChild(typeBadge);
+    
+    const location = document.createElement('div');
+    location.className = 'usage-location';
+    location.innerHTML = `
+      <span class="usage-line">line ${usage.line}</span>
+    `;
+    
+    item.appendChild(symbol);
+    item.appendChild(location);
+    
+    // Add context if available
+    if (usage.context && usage.context.trim()) {
+      const context = document.createElement('div');
+      context.className = 'usage-context';
+      context.textContent = usage.context;
+      item.appendChild(context);
+    }
+    
+    return item;
   }
 }
 

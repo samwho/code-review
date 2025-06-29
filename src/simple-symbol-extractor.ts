@@ -147,7 +147,7 @@ export class SimpleSymbolExtractor {
             name,
             type: 'export',
             line: interfaceDecl.getStartLineNumber(),
-            isExported: interfaceDecl.isExported()
+            isExported: true // Interfaces we extract are always exported
           });
         }
       });
