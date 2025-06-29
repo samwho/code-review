@@ -63,7 +63,7 @@ class LocationTestRepoBuilder {
   cleanup(): void {
     try {
       rmSync(this.tempDir, { recursive: true, force: true });
-    } catch (error) {
+    } catch (_error) {
       // Failed to cleanup test directory
     }
   }
@@ -98,42 +98,83 @@ function findExpectedLineNumbers(content: string, symbolNames: string[]): Map<st
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     for (const symbolName of symbolNames) {
-      // Look for class declarations
-      if (line?.includes(`class ${symbolName}`) || line?.includes(`export class ${symbolName}`)) {
-        expectedLines.set(symbolName, i + 1);
-      }
-      // Look for function declarations
-      else if (
-        line?.includes(`function ${symbolName}`) ||
-        line?.includes(`export function ${symbolName}`)
-      ) {
-        expectedLines.set(symbolName, i + 1);
-      }
-      // Look for method declarations (inside class)
-      else if (
-        line?.trim().startsWith(`${symbolName}(`) ||
-        line?.trim().startsWith(`async ${symbolName}(`)
-      ) {
-        expectedLines.set(symbolName, i + 1);
-      }
-      // Look for arrow function assignments
-      else if (
-        line?.includes(`const ${symbolName} =`) ||
-        line?.includes(`export const ${symbolName} =`)
-      ) {
-        expectedLines.set(symbolName, i + 1);
-      }
-      // Look for interface declarations
-      else if (
-        line?.includes(`interface ${symbolName}`) ||
-        line?.includes(`export interface ${symbolName}`)
-      ) {
+      const lineNumber = findSymbolInLine(line, symbolName);
+      if (lineNumber !== null) {
         expectedLines.set(symbolName, i + 1);
       }
     }
   }
 
   return expectedLines;
+}
+
+/**
+ * Check if a symbol is defined in a given line
+ */
+function findSymbolInLine(line: string | undefined, symbolName: string): number | null {
+  if (!line) {
+    return null;
+  }
+
+  if (isClassDeclaration(line, symbolName)) {
+    return 1;
+  }
+
+  if (isFunctionDeclaration(line, symbolName)) {
+    return 1;
+  }
+
+  if (isMethodDeclaration(line, symbolName)) {
+    return 1;
+  }
+
+  if (isArrowFunctionAssignment(line, symbolName)) {
+    return 1;
+  }
+
+  if (isInterfaceDeclaration(line, symbolName)) {
+    return 1;
+  }
+
+  return null;
+}
+
+/**
+ * Check if line contains a class declaration
+ */
+function isClassDeclaration(line: string, symbolName: string): boolean {
+  return line.includes(`class ${symbolName}`) || line.includes(`export class ${symbolName}`);
+}
+
+/**
+ * Check if line contains a function declaration
+ */
+function isFunctionDeclaration(line: string, symbolName: string): boolean {
+  return line.includes(`function ${symbolName}`) || line.includes(`export function ${symbolName}`);
+}
+
+/**
+ * Check if line contains a method declaration
+ */
+function isMethodDeclaration(line: string, symbolName: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith(`${symbolName}(`) || trimmed.startsWith(`async ${symbolName}(`);
+}
+
+/**
+ * Check if line contains an arrow function assignment
+ */
+function isArrowFunctionAssignment(line: string, symbolName: string): boolean {
+  return line.includes(`const ${symbolName} =`) || line.includes(`export const ${symbolName} =`);
+}
+
+/**
+ * Check if line contains an interface declaration
+ */
+function isInterfaceDeclaration(line: string, symbolName: string): boolean {
+  return (
+    line.includes(`interface ${symbolName}`) || line.includes(`export interface ${symbolName}`)
+  );
 }
 
 test('basic line number accuracy - classes and functions', async () => {
@@ -583,10 +624,9 @@ export const isValidEmail = (email: string): boolean => {
   const oxcIsValidEmail = oxcFileSymbols?.symbols.find((s) => s.name === 'isValidEmail');
   expect(oxcIsValidEmail?.line).toBe(isValidEmailLine);
 
-  // Print out symbols for debugging
-  console.log('OXC extractor symbols:');
-  for (const s of oxcFileSymbols?.symbols || []) {
-    console.log(`  ${s.name}: line ${s.line} (${s.type})`);
+  // Debug: print symbols for troubleshooting
+  for (const _s of oxcFileSymbols?.symbols || []) {
+    // Symbol: ${_s.name}: line ${_s.line} (${_s.type})
   }
 
   // Verify all symbols have valid line numbers

@@ -71,7 +71,7 @@ class TestRepoBuilder {
   cleanup(): void {
     try {
       rmSync(this.tempDir, { recursive: true, force: true });
-    } catch (error) {
+    } catch (_error) {
       // Failed to cleanup test directory
     }
   }
@@ -221,7 +221,9 @@ export class C {
   // Verify class A and its method
   const aSymbols = symbolsByFile.get('src/a.ts');
   expect(aSymbols).toBeDefined();
-  if (!aSymbols) return;
+  if (!aSymbols) {
+    return;
+  }
   expect(aSymbols).toHaveLength(2);
   expect(aSymbols.find((s) => s.type === 'class')).toEqual({
     name: 'A',
@@ -240,7 +242,9 @@ export class C {
   // Verify class B and its method
   const bSymbols = symbolsByFile.get('src/b.ts');
   expect(bSymbols).toBeDefined();
-  if (!bSymbols) return;
+  if (!bSymbols) {
+    return;
+  }
   expect(bSymbols).toHaveLength(2);
   expect(bSymbols.find((s) => s.type === 'class')).toEqual({
     name: 'B',
@@ -259,7 +263,9 @@ export class C {
   // Verify class C and its method
   const cSymbols = symbolsByFile.get('src/c.ts');
   expect(cSymbols).toBeDefined();
-  if (!cSymbols) return;
+  if (!cSymbols) {
+    return;
+  }
   expect(cSymbols).toHaveLength(2);
   expect(cSymbols.find((s) => s.type === 'class')).toEqual({
     name: 'C',
@@ -780,7 +786,9 @@ export const validateStatus = (status: string): status is Status => {
 
   const typesSymbols = symbolsByFile.get('src/types.ts');
   expect(typesSymbols).toBeDefined();
-  if (!typesSymbols) return;
+  if (!typesSymbols) {
+    return;
+  }
   expect(typesSymbols).toHaveLength(2); // User interface + DEFAULT_STATUS constant
 
   const userInterface = typesSymbols.find((s) => s.name === 'User');
@@ -801,7 +809,9 @@ export const validateStatus = (status: string): status is Status => {
 
   const functionsSymbols = symbolsByFile.get('src/functions.ts');
   expect(functionsSymbols).toBeDefined();
-  if (!functionsSymbols) return;
+  if (!functionsSymbols) {
+    return;
+  }
   expect(functionsSymbols).toHaveLength(2);
   expect(functionsSymbols.map((s) => s.name).sort()).toEqual(['createUser', 'validateStatus']);
   expect(functionsSymbols.every((s) => s.type === 'function')).toBe(true);

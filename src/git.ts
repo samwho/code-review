@@ -9,7 +9,7 @@ import { DependencyAnalyzer } from './dependency-analyzer';
 import { type OxcFileSymbols, type OxcSymbol, OxcSymbolExtractor } from './oxc-symbol-extractor';
 import { DiffParser } from './parsers/diff-parser';
 import type { DependencyGraph } from './types/analysis';
-import type { DiffLineType, FileDiff } from './types/git';
+import type { DiffLine, DiffLineType, FileDiff } from './types/git';
 import { isSupportedSourceFile } from './utils/file-utils';
 import {
   extractSymbolReferencesFromContent,
@@ -422,7 +422,7 @@ export class GitService {
   private findSymbolReferenceInLine(
     symbolName: string,
     file: FileDiff,
-    line: any
+    line: DiffLine
   ): SymbolReference | null {
     if (line.isHunkHeader) {
       return null;
@@ -446,7 +446,7 @@ export class GitService {
   /**
    * Get line number from diff line based on type
    */
-  private getLineNumberFromDiffLine(line: any): number | undefined {
+  private getLineNumberFromDiffLine(line: DiffLine): number | undefined {
     return line.type === 'added'
       ? line.lineNumber
       : line.type === 'removed'

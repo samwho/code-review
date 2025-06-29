@@ -65,8 +65,8 @@ authService.register(newUser);
       // 1. new AuthService() - constructor call (line will vary based on content)
       // Should NOT find the class definition itself (that's a definition, not a reference)
       expect(authServiceRefs.length).toBe(1);
-      expect(authServiceRefs[0].line).toBeGreaterThan(20); // Should be in the usage section
-      expect(authServiceRefs[0].context).toBe('identifier'); // In 'new AuthService()'
+      expect(authServiceRefs[0]?.line).toBeGreaterThan(20); // Should be in the usage section
+      expect(authServiceRefs[0]?.context).toBe('identifier'); // In 'new AuthService()'
 
       // Test login method references
       const loginRefs = refsBySymbol.get('login') || [];
@@ -76,8 +76,8 @@ authService.register(newUser);
       // 1. authService.login(userCreds) - method call
       // Should NOT find the method definition
       expect(loginRefs.length).toBe(1);
-      expect(loginRefs[0].line).toBeGreaterThan(20); // Should be in usage section
-      expect(loginRefs[0].context).toBe('property_access');
+      expect(loginRefs[0]?.line).toBeGreaterThan(20); // Should be in usage section
+      expect(loginRefs[0]?.context).toBe('property_access');
 
       // Test register method references
       const registerRefs = refsBySymbol.get('register') || [];
@@ -88,8 +88,8 @@ authService.register(newUser);
       // Should NOT find the method definition
       // Should NOT find "/auth/register" in the string literal
       expect(registerRefs.length).toBe(1);
-      expect(registerRefs[0].line).toBeGreaterThan(20); // Should be in usage section
-      expect(registerRefs[0].context).toBe('property_access');
+      expect(registerRefs[0]?.line).toBeGreaterThan(20); // Should be in usage section
+      expect(registerRefs[0]?.context).toBe('property_access');
 
       // Test private method references
       const postRefs = refsBySymbol.get('post') || [];
@@ -153,8 +153,8 @@ const user = userService.findUser('123');
       // findUser should appear in method call, not confused with UserService
       const findUserRefs = refsBySymbol.get('findUser') || [];
       expect(findUserRefs.length).toBe(1);
-      expect(findUserRefs[0].line).toBeGreaterThan(3); // Should be in usage section
-      expect(findUserRefs[0].context).toBe('property_access');
+      expect(findUserRefs[0]?.line).toBeGreaterThan(3); // Should be in usage section
+      expect(findUserRefs[0]?.context).toBe('property_access');
 
       // Most importantly: findUser reference should NOT point to UserService class definition
       // This is the bug we're trying to catch

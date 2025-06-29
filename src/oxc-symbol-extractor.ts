@@ -10,6 +10,29 @@ import { simpleGit } from 'simple-git';
 import { APP_CONFIG } from './config';
 import type { FileDiff } from './types/git';
 
+// AST Node interfaces for type safety
+interface AstNode {
+  type: string;
+  start?: number;
+  end?: number;
+  id?: { name?: string; start?: number };
+  source?: { value?: string };
+  specifiers?: AstNode[];
+  declaration?: AstNode;
+  exported?: { name?: string; start?: number };
+  imported?: { name?: string };
+  local?: { name?: string };
+  body?: { body?: AstNode[] } | AstNode[];
+  declarations?: AstNode[];
+  init?: { type: string } | AstNode;
+  key?: { name?: string; start?: number };
+  callee?: AstNode;
+  property?: AstNode;
+  left?: AstNode;
+  // Additional properties to handle OXC parser nodes
+  [key: string]: unknown;
+}
+
 export type OxcSymbol =
   | {
       type: 'class';
@@ -211,7 +234,7 @@ export class OxcSymbolExtractor {
       });
 
       for (const node of result.program.body) {
-        this.processTopLevelNode(node, content, imports, exports);
+        this.processTopLevelNode(node as AstNode, content, imports, exports);
       }
     } catch (_error) {
       // Ignore parsing errors when extracting dependencies
@@ -224,7 +247,7 @@ export class OxcSymbolExtractor {
    * Process a single top-level AST node for dependency extraction
    */
   private processTopLevelNode(
-    node: any,
+    node: AstNode,
     content: string,
     imports: OxcImport[],
     exports: OxcExport[]
@@ -248,26 +271,26 @@ export class OxcSymbolExtractor {
   /**
    * Process ImportDeclaration node
    */
-  private processImportDeclaration(node: any, content: string, imports: OxcImport[]): void {
+  private processImportDeclaration(node: AstNode, content: string, imports: OxcImport[]): void {
     if (!node.source?.value) {
       return;
     }
 
     const modulePath = node.source.value;
-    const importedSymbols = this.extractImportedSymbols(node.specifiers);
+    const importedSymbols = this.extractImportedSymbols(node.specifiers || []);
 
     imports.push({
       module: modulePath,
       isRelative: this.isRelativeImport(modulePath),
       importedSymbols,
-      line: this.getLineNumber(content, node.start),
+      line: this.getLineNumber(content, node.start || 0),
     });
   }
 
   /**
    * Extract imported symbols from import specifiers
    */
-  private extractImportedSymbols(specifiers: any[]): string[] {
+  private extractImportedSymbols(specifiers: AstNode[]): string[] {
     if (!specifiers) {
       return [];
     }
@@ -287,7 +310,7 @@ export class OxcSymbolExtractor {
   /**
    * Get symbol name from import specifier
    */
-  private getImportSymbolName(spec: any): string | null {
+  private getImportSymbolName(spec: AstNode): string | null {
     if (
       spec.type === 'ImportSpecifier' &&
       spec.imported &&
@@ -318,7 +341,11 @@ export class OxcSymbolExtractor {
   /**
    * Process ExportNamedDeclaration node
    */
-  private processExportNamedDeclaration(node: any, content: string, exports: OxcExport[]): void {
+  private processExportNamedDeclaration(
+    node: AstNode,
+    content: string,
+    exports: OxcExport[]
+  ): void {
     const exportedSymbols: string[] = [];
     let isReExport = false;
     let module: string | null = null;
@@ -328,7 +355,7 @@ export class OxcSymbolExtractor {
       module = node.source.value;
     }
 
-    this.extractExportSpecifierSymbols(node.specifiers, exportedSymbols);
+    this.extractExportSpecifierSymbols(node.specifiers || [], exportedSymbols);
     this.extractDeclarationExportSymbols(node.declaration, exportedSymbols);
 
     if (exportedSymbols.length > 0) {
@@ -336,7 +363,7 @@ export class OxcSymbolExtractor {
         module,
         exportedSymbols,
         isReExport,
-        line: this.getLineNumber(content, node.start),
+        line: this.getLineNumber(content, node.start || 0),
       });
     }
   }
@@ -344,7 +371,7 @@ export class OxcSymbolExtractor {
   /**
    * Extract symbols from export specifiers
    */
-  private extractExportSpecifierSymbols(specifiers: any[], exportedSymbols: string[]): void {
+  private extractExportSpecifierSymbols(specifiers: AstNode[], exportedSymbols: string[]): void {
     if (!specifiers) {
       return;
     }
@@ -359,7 +386,10 @@ export class OxcSymbolExtractor {
   /**
    * Extract symbols from export declaration
    */
-  private extractDeclarationExportSymbols(declaration: any, exportedSymbols: string[]): void {
+  private extractDeclarationExportSymbols(
+    declaration: AstNode | undefined,
+    exportedSymbols: string[]
+  ): void {
     if (declaration) {
       this.extractExportNamesFromDeclaration(declaration, exportedSymbols);
     }
@@ -368,25 +398,29 @@ export class OxcSymbolExtractor {
   /**
    * Process ExportDefaultDeclaration node
    */
-  private processExportDefaultDeclaration(node: any, content: string, exports: OxcExport[]): void {
+  private processExportDefaultDeclaration(
+    node: AstNode,
+    content: string,
+    exports: OxcExport[]
+  ): void {
     exports.push({
       module: null,
       exportedSymbols: ['default'],
       isReExport: false,
-      line: this.getLineNumber(content, node.start),
+      line: this.getLineNumber(content, node.start || 0),
     });
   }
 
   /**
    * Process ExportAllDeclaration node
    */
-  private processExportAllDeclaration(node: any, content: string, exports: OxcExport[]): void {
+  private processExportAllDeclaration(node: AstNode, content: string, exports: OxcExport[]): void {
     if (node.source?.value) {
       exports.push({
         module: node.source.value,
         exportedSymbols: ['*'],
         isReExport: true,
-        line: this.getLineNumber(content, node.start),
+        line: this.getLineNumber(content, node.start || 0),
       });
     }
   }
@@ -429,7 +463,7 @@ export class OxcSymbolExtractor {
       });
 
       for (const node of result.program.body) {
-        this.processNodeForSymbolExtraction(node, symbols, content);
+        this.processNodeForSymbolExtraction(node as AstNode, symbols, content);
       }
     } catch (_error) {
       // Ignore parsing errors when extracting symbols
@@ -441,7 +475,11 @@ export class OxcSymbolExtractor {
   /**
    * Process a single AST node for symbol extraction
    */
-  private processNodeForSymbolExtraction(node: any, symbols: OxcSymbol[], content: string): void {
+  private processNodeForSymbolExtraction(
+    node: AstNode,
+    symbols: OxcSymbol[],
+    content: string
+  ): void {
     switch (node.type) {
       case 'ExportNamedDeclaration':
         this.processExportNamedDeclarationForSymbols(node, symbols, content);
@@ -458,7 +496,7 @@ export class OxcSymbolExtractor {
    * Process ExportNamedDeclaration for symbol extraction
    */
   private processExportNamedDeclarationForSymbols(
-    node: any,
+    node: AstNode,
     symbols: OxcSymbol[],
     content: string
   ): void {
@@ -466,14 +504,14 @@ export class OxcSymbolExtractor {
       this.extractFromDeclaration(node.declaration, symbols, true, content);
     }
 
-    this.processExportSpecifiersForSymbols(node.specifiers, symbols, content);
+    this.processExportSpecifiersForSymbols(node.specifiers || [], symbols, content);
   }
 
   /**
    * Process export specifiers for symbol extraction
    */
   private processExportSpecifiersForSymbols(
-    specifiers: any[],
+    specifiers: AstNode[],
     symbols: OxcSymbol[],
     content: string
   ): void {
@@ -482,11 +520,11 @@ export class OxcSymbolExtractor {
     }
 
     for (const spec of specifiers) {
-      if (this.isValidExportSpecifier(spec)) {
+      if (this.isValidExportSpecifier(spec) && spec.exported?.name) {
         symbols.push({
           name: spec.exported.name,
           type: 'export',
-          line: this.getLineNumber(content, spec.exported.start),
+          line: this.getLineNumber(content, spec.exported.start || 0),
           isExported: true,
         });
       }
@@ -496,31 +534,20 @@ export class OxcSymbolExtractor {
   /**
    * Check if export specifier is valid
    */
-  private isValidExportSpecifier(spec: any): boolean {
-    return spec.exported && 'name' in spec.exported && typeof spec.exported.name === 'string';
+  private isValidExportSpecifier(spec: AstNode): boolean {
+    return !!(
+      spec.exported &&
+      'name' in spec.exported &&
+      typeof spec.exported.name === 'string' &&
+      spec.exported.name
+    );
   }
 
   /**
    * Extract symbols from a declaration node
    */
   private extractFromDeclaration(
-    node: {
-      type: string;
-      id?: { name?: string };
-      start?: number;
-      body?: {
-        body?: Array<{
-          type: string;
-          key?: { name?: string };
-          start?: number;
-        }>;
-      };
-      declarations?: Array<{
-        id?: { name?: string };
-        init?: { type: string };
-        start?: number;
-      }>;
-    },
+    node: AstNode,
     symbols: OxcSymbol[],
     isExported: boolean,
     content: string
@@ -545,7 +572,7 @@ export class OxcSymbolExtractor {
    * Extract symbols from class declaration
    */
   private extractFromClassDeclaration(
-    node: any,
+    node: AstNode,
     symbols: OxcSymbol[],
     isExported: boolean,
     content: string
@@ -558,18 +585,18 @@ export class OxcSymbolExtractor {
     symbols.push({
       name: className,
       type: 'class',
-      line: this.getLineNumber(content, node.start),
+      line: this.getLineNumber(content, node.start || 0),
       isExported,
     });
 
-    this.extractClassMethods(node.body, className, symbols, isExported, content);
+    this.extractClassMethods(node.body as AstNode, className, symbols, isExported, content);
   }
 
   /**
    * Extract class methods from class body
    */
   private extractClassMethods(
-    body: any,
+    body: AstNode,
     className: string,
     symbols: OxcSymbol[],
     isExported: boolean,
@@ -579,15 +606,23 @@ export class OxcSymbolExtractor {
       return;
     }
 
-    for (const member of body.body) {
+    const bodyArray = Array.isArray(body) ? body : (body as { body?: AstNode[] })?.body;
+    if (!bodyArray) {
+      return;
+    }
+
+    for (const member of bodyArray) {
       if (this.isValidMethod(member)) {
-        symbols.push({
-          name: member.key.name,
-          type: 'function',
-          line: this.getLineNumber(content, member.start),
-          isExported, // Methods inherit class export status
-          className: className,
-        });
+        const methodName = member.key?.name;
+        if (methodName) {
+          symbols.push({
+            name: methodName,
+            type: 'function',
+            line: this.getLineNumber(content, member.start || 0),
+            isExported, // Methods inherit class export status
+            className: className,
+          });
+        }
       }
     }
   }
@@ -595,20 +630,27 @@ export class OxcSymbolExtractor {
   /**
    * Check if member is a valid method (not constructor)
    */
-  private isValidMethod(member: any): boolean {
-    return (
-      member.type === 'MethodDefinition' &&
-      member.key &&
-      member.key.name &&
-      member.key.name !== 'constructor'
-    );
+  private isValidMethod(member: AstNode): boolean {
+    if (member.type !== 'MethodDefinition') {
+      return false;
+    }
+
+    if (!member.key?.name) {
+      return false;
+    }
+
+    if (typeof member.key.name !== 'string') {
+      return false;
+    }
+
+    return member.key.name !== 'constructor';
   }
 
   /**
    * Extract symbols from function declaration
    */
   private extractFromFunctionDeclaration(
-    node: any,
+    node: AstNode,
     symbols: OxcSymbol[],
     isExported: boolean,
     content: string
@@ -617,7 +659,7 @@ export class OxcSymbolExtractor {
       symbols.push({
         name: node.id.name,
         type: 'function',
-        line: this.getLineNumber(content, node.start),
+        line: this.getLineNumber(content, node.start || 0),
         isExported,
       });
     }
@@ -626,12 +668,16 @@ export class OxcSymbolExtractor {
   /**
    * Extract symbols from interface declaration
    */
-  private extractFromInterfaceDeclaration(node: any, symbols: OxcSymbol[], content: string): void {
+  private extractFromInterfaceDeclaration(
+    node: AstNode,
+    symbols: OxcSymbol[],
+    content: string
+  ): void {
     if (node.id?.name) {
       symbols.push({
         name: node.id.name,
         type: 'export',
-        line: this.getLineNumber(content, node.start),
+        line: this.getLineNumber(content, node.start || 0),
         isExported: true,
       });
     }
@@ -641,7 +687,7 @@ export class OxcSymbolExtractor {
    * Extract symbols from variable declaration
    */
   private extractFromVariableDeclaration(
-    node: any,
+    node: AstNode,
     symbols: OxcSymbol[],
     isExported: boolean,
     content: string
@@ -650,7 +696,7 @@ export class OxcSymbolExtractor {
       return;
     }
 
-    for (const decl of node.declarations) {
+    for (const decl of node.declarations || []) {
       this.extractFromVariableDeclarator(decl, symbols, isExported, content);
     }
   }
@@ -659,7 +705,7 @@ export class OxcSymbolExtractor {
    * Extract symbols from variable declarator
    */
   private extractFromVariableDeclarator(
-    decl: any,
+    decl: AstNode,
     symbols: OxcSymbol[],
     isExported: boolean,
     content: string
@@ -670,18 +716,18 @@ export class OxcSymbolExtractor {
 
     const name = decl.id.name;
 
-    if (this.isFunctionExpression(decl.init)) {
+    if (this.isFunctionExpression(decl.init as AstNode)) {
       symbols.push({
         name,
         type: 'function',
-        line: this.getLineNumber(content, decl.start),
+        line: this.getLineNumber(content, decl.start || 0),
         isExported,
       });
     } else if (isExported) {
       symbols.push({
         name,
         type: 'export',
-        line: this.getLineNumber(content, decl.start),
+        line: this.getLineNumber(content, decl.start || 0),
         isExported: true,
       });
     }
@@ -690,7 +736,7 @@ export class OxcSymbolExtractor {
   /**
    * Check if init is a function expression
    */
-  private isFunctionExpression(init: any): boolean {
+  private isFunctionExpression(init: AstNode): boolean {
     return init && (init.type === 'ArrowFunctionExpression' || init.type === 'FunctionExpression');
   }
 

@@ -62,7 +62,7 @@ function prepareContentForParsing(lineContent: string): string {
 function addMissingSemicolon(content: string): string {
   const hasProperEnding = content.endsWith(';') || content.endsWith('{') || content.endsWith('}');
 
-  return hasProperEnding ? content : content + ';';
+  return hasProperEnding ? content : `${content};`;
 }
 
 /**
@@ -72,7 +72,7 @@ function closeIncompleteBlocks(content: string): string {
   const hasOpenBrace = content.includes('{');
   const hasCloseBrace = content.includes('}');
 
-  return hasOpenBrace && !hasCloseBrace ? content + ' }' : content;
+  return hasOpenBrace && !hasCloseBrace ? `${content} }` : content;
 }
 
 /**

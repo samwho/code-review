@@ -17,7 +17,8 @@ export class CodeReviewServer {
   private port: number;
 
   constructor(port?: number) {
-    this.port = port || Number(process.env.PORT) || APP_CONFIG.DEFAULT_PORT;
+    // biome-ignore lint/complexity/useLiteralKeys: TypeScript requires bracket notation for index signatures
+    this.port = port || Number(process.env['PORT']) || APP_CONFIG.DEFAULT_PORT;
     this.apiRoutes = new ApiRoutes();
     this.staticRoutes = new StaticRoutes();
   }

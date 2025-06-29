@@ -57,10 +57,17 @@ export class DependencyAnalyzer {
    * Build dependency graph from files
    */
   async buildDependencyGraph(files: Map<string, string>): Promise<DependencyGraph> {
-    const nodes = new Map<string, FileAnalysis>();
-    const edges: DependencyEdge[] = [];
+    const nodes = await this.analyzeAllFiles(files);
+    const edges = this.buildDependencyEdges(nodes);
+    return { nodes, edges };
+  }
 
-    // Analyze all files
+  /**
+   * Analyze all files to create nodes
+   */
+  private async analyzeAllFiles(files: Map<string, string>): Promise<Map<string, FileAnalysis>> {
+    const nodes = new Map<string, FileAnalysis>();
+
     for (const filename of Array.from(files.keys())) {
       const content = files.get(filename);
       if (content !== undefined) {
@@ -69,27 +76,47 @@ export class DependencyAnalyzer {
       }
     }
 
-    // Build edges based on imports
+    return nodes;
+  }
+
+  /**
+   * Build dependency edges from analyzed nodes
+   */
+  private buildDependencyEdges(nodes: Map<string, FileAnalysis>): DependencyEdge[] {
+    const edges: DependencyEdge[] = [];
+
     for (const filename of Array.from(nodes.keys())) {
       const analysis = nodes.get(filename);
       if (analysis) {
-        for (const imp of analysis.imports) {
-          if (imp.source.startsWith('./') || imp.source.startsWith('../')) {
-            const resolvedPath = this.resolveModulePath(imp.source, filename, nodes);
-            if (resolvedPath) {
-              edges.push({
-                from: filename,
-                to: resolvedPath,
-                type: 'import',
-                symbols: imp.imports.map((spec) => spec.name),
-              });
-            }
-          }
-        }
+        this.processFileImports(filename, analysis, nodes, edges);
       }
     }
 
-    return { nodes, edges };
+    return edges;
+  }
+
+  /**
+   * Process imports for a single file
+   */
+  private processFileImports(
+    filename: string,
+    analysis: FileAnalysis,
+    nodes: Map<string, FileAnalysis>,
+    edges: DependencyEdge[]
+  ): void {
+    for (const imp of analysis.imports) {
+      if (this.isRelativeImport(imp.source)) {
+        const resolvedPath = this.resolveModulePath(imp.source, filename, nodes);
+        if (resolvedPath) {
+          edges.push({
+            from: filename,
+            to: resolvedPath,
+            type: 'import',
+            symbols: imp.imports.map((spec) => spec.name),
+          });
+        }
+      }
+    }
   }
 
   /**

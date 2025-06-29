@@ -147,7 +147,9 @@ interface User {
   expect(symbols).toHaveLength(1);
   const fileSymbols = symbols[0];
   expect(fileSymbols).toBeDefined();
-  if (!fileSymbols) return;
+  if (!fileSymbols) {
+    return;
+  }
   expect(fileSymbols.filename).toBe('src/basic.ts');
   expect(fileSymbols.symbols).toHaveLength(5);
 
@@ -264,7 +266,9 @@ export function identity<T>(value: T): T {
   expect(symbols).toHaveLength(1);
   const fileSymbols = symbols[0];
   expect(fileSymbols).toBeDefined();
-  if (!fileSymbols) return;
+  if (!fileSymbols) {
+    return;
+  }
 
   expect(fileSymbols.symbols).toHaveLength(5); // Updated for OXC behavior
 
@@ -381,7 +385,9 @@ export const createApiClient = (baseUrl: string) => ({
   expect(symbols).toHaveLength(1);
   const fileSymbols = symbols[0];
   expect(fileSymbols).toBeDefined();
-  if (!fileSymbols) return;
+  if (!fileSymbols) {
+    return;
+  }
   expect(fileSymbols.symbols).toHaveLength(8); // Updated: correct count with DB alias
 
   // Named constant exports
@@ -542,7 +548,9 @@ export class ServiceWithDecorators {
   expect(symbols).toHaveLength(1);
   const fileSymbols = symbols[0];
   expect(fileSymbols).toBeDefined();
-  if (!fileSymbols) return;
+  if (!fileSymbols) {
+    return;
+  }
 
   // Check base class
   const baseRepo = fileSymbols.symbols.find((s) => s.name === 'BaseRepository');
@@ -828,7 +836,9 @@ export const FancyButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
   expect(symbols).toHaveLength(1);
   const fileSymbols = symbols[0];
   expect(fileSymbols).toBeDefined();
-  if (!fileSymbols) return;
+  if (!fileSymbols) {
+    return;
+  }
   expect(fileSymbols.symbols.length).toBeGreaterThan(0);
 
   // Function component (arrow function)
@@ -926,7 +936,9 @@ test('non-typescript files are skipped', async () => {
   expect(symbols).toHaveLength(1);
   const validSymbols = symbols[0];
   expect(validSymbols).toBeDefined();
-  if (!validSymbols) return;
+  if (!validSymbols) {
+    return;
+  }
   expect(validSymbols.filename).toBe('src/valid.ts');
   expect(validSymbols.symbols).toHaveLength(1);
   const firstSymbol = validSymbols.symbols[0];
@@ -999,7 +1011,9 @@ export const CONSTANT_${i} = ${i};
   expect(symbols).toHaveLength(1);
   const performanceSymbols = symbols[0];
   expect(performanceSymbols).toBeDefined();
-  if (!performanceSymbols) return;
+  if (!performanceSymbols) {
+    return;
+  }
   expect(performanceSymbols.symbols.length).toBe(600); // 100 classes + 300 methods + 100 functions + 100 constants
 
   // Verify a few specific symbols
