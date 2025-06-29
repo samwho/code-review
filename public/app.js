@@ -631,7 +631,7 @@ class DiffViewer {
         // Create relations array from preprocessed data
         const relations = [];
         
-        // Add the definition
+        // Add only the definition (references will be handled separately)
         relations.push({
           type: 'defined_in',
           file: symbolInfo.filename,
@@ -639,16 +639,6 @@ class DiffViewer {
           symbolType: symbolInfo.type,
           isExported: symbolInfo.isExported,
           className: symbolInfo.className
-        });
-
-        // Add preprocessed references
-        symbolInfo.references.forEach(ref => {
-          relations.push({
-            type: 'used_in',
-            file: ref.file,
-            line: ref.line,
-            context: ref.context
-          });
         });
         
         this.makeSymbolInteractive(token, text, relations, symbolInfo.references);
@@ -805,22 +795,7 @@ class DiffViewer {
       content += '</div>';
     }
     
-    // Show references in other files
-    const references = relations.filter(r => r.type === 'used_in');
-    if (references.length > 0) {
-      content += '<div class="relation-section">';
-      content += '<div class="relation-title">📍 Used in this PR:</div>';
-      references.forEach(ref => {
-        const contextIcon = this.getContextIcon(ref.context);
-        content += `<div class="relation-item" data-file="${ref.file}" data-line="${ref.line}">
-          <span class="file-link">${ref.file}</span>:${ref.line} ${contextIcon}
-          <div class="usage-context">${ref.context ? ref.context.replace('_', ' ') : 'usage'}</div>
-        </div>`;
-      });
-      content += '</div>';
-    }
-    
-    // Show usage in current PR
+    // Show detailed usage in current PR (with code snippets)
     if (usageInPR.length > 0) {
       content += '<div class="relation-section">';
       content += '<div class="relation-title">📍 Used in this PR:</div>';
@@ -863,6 +838,9 @@ class DiffViewer {
   }
 
   navigateToFile(targetFile, targetLine) {
+    // Store current scroll position for back button
+    this.storeCurrentPosition();
+    
     // Find the file diff element
     const fileDiffs = this.diffContainer.querySelectorAll('.file-diff');
     
@@ -875,11 +853,11 @@ class DiffViewer {
           block: 'start' 
         });
         
-        // Highlight the file briefly
-        fileDiff.classList.add('file-highlighted');
+        // Much more prominent file highlighting
+        fileDiff.classList.add('file-navigation-highlight');
         setTimeout(() => {
-          fileDiff.classList.remove('file-highlighted');
-        }, 2000);
+          fileDiff.classList.remove('file-navigation-highlight');
+        }, 5000); // Longer duration
         
         // If we have a specific line, try to find and highlight it
         if (targetLine) {
@@ -890,14 +868,29 @@ class DiffViewer {
               if (lineText === targetLine.toString()) {
                 const row = lineNumber.closest('tr');
                 if (row) {
+                  // Clear any existing highlights
+                  this.clearNavigationHighlights();
+                  
                   row.scrollIntoView({ 
                     behavior: 'smooth', 
                     block: 'center' 
                   });
-                  row.classList.add('line-highlighted');
+                  
+                  // Much more prominent line highlighting
+                  row.classList.add('line-navigation-highlight');
+                  
+                  // Add pulsing effect
                   setTimeout(() => {
-                    row.classList.remove('line-highlighted');
-                  }, 3000);
+                    row.classList.add('line-navigation-pulse');
+                  }, 500);
+                  
+                  // Show back button
+                  this.showBackButton(row);
+                  
+                  // Remove highlights after longer duration
+                  setTimeout(() => {
+                    row.classList.remove('line-navigation-highlight', 'line-navigation-pulse');
+                  }, 8000); // Much longer duration
                 }
                 break;
               }
@@ -907,6 +900,118 @@ class DiffViewer {
         
         break;
       }
+    }
+  }
+
+  /**
+   * Store current scroll position for back navigation
+   */
+  storeCurrentPosition() {
+    this.previousScrollPosition = {
+      top: window.pageYOffset || document.documentElement.scrollTop,
+      left: window.pageXOffset || document.documentElement.scrollLeft,
+      timestamp: Date.now()
+    };
+  }
+
+  /**
+   * Clear any existing navigation highlights
+   */
+  clearNavigationHighlights() {
+    // Remove any existing highlights
+    const highlighted = this.diffContainer.querySelectorAll('.line-navigation-highlight, .line-navigation-pulse, .file-navigation-highlight');
+    highlighted.forEach(el => {
+      el.classList.remove('line-navigation-highlight', 'line-navigation-pulse', 'file-navigation-highlight');
+    });
+    
+    // Remove any existing back buttons
+    const backButtons = document.querySelectorAll('.navigation-back-button');
+    backButtons.forEach(btn => btn.remove());
+  }
+
+  /**
+   * Show a back button near the highlighted line
+   */
+  showBackButton(targetRow) {
+    // Remove any existing back buttons
+    const existingButtons = document.querySelectorAll('.navigation-back-button');
+    existingButtons.forEach(btn => btn.remove());
+    
+    // Create back button
+    const backButton = document.createElement('button');
+    backButton.className = 'navigation-back-button';
+    backButton.innerHTML = '← Back';
+    backButton.title = 'Go back to previous location';
+    
+    // Style the button
+    backButton.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #1976d2;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+      z-index: 1000;
+      transition: all 0.2s ease;
+    `;
+    
+    // Add hover effect
+    backButton.addEventListener('mouseenter', () => {
+      backButton.style.background = '#1565c0';
+      backButton.style.transform = 'translateY(-2px)';
+      backButton.style.boxShadow = '0 6px 16px rgba(25, 118, 210, 0.4)';
+    });
+    
+    backButton.addEventListener('mouseleave', () => {
+      backButton.style.background = '#1976d2';
+      backButton.style.transform = 'translateY(0)';
+      backButton.style.boxShadow = '0 4px 12px rgba(25, 118, 210, 0.3)';
+    });
+    
+    // Add click handler
+    backButton.addEventListener('click', () => {
+      this.navigateBack();
+    });
+    
+    // Add to page
+    document.body.appendChild(backButton);
+    
+    // Auto-hide after 10 seconds
+    setTimeout(() => {
+      if (backButton.parentNode) {
+        backButton.style.opacity = '0';
+        setTimeout(() => {
+          backButton.remove();
+        }, 300);
+      }
+    }, 10000);
+  }
+
+  /**
+   * Navigate back to previous position
+   */
+  navigateBack() {
+    if (this.previousScrollPosition) {
+      // Clear highlights
+      this.clearNavigationHighlights();
+      
+      // Scroll back to previous position
+      window.scrollTo({
+        top: this.previousScrollPosition.top,
+        left: this.previousScrollPosition.left,
+        behavior: 'smooth'
+      });
+      
+      // Clear the stored position
+      this.previousScrollPosition = null;
+      
+      console.log('🔙 Navigated back to previous position');
     }
   }
 

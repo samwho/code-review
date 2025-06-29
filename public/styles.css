@@ -635,7 +635,59 @@ body {
   white-space: nowrap;
 }
 
-/* Navigation highlight animations */
+/* Navigation highlight animations - Much more prominent */
+.file-navigation-highlight {
+  border: 3px solid var(--accent-green) !important;
+  box-shadow: 0 0 20px rgba(31, 136, 61, 0.5) !important;
+  animation: fileNavigationPulse 2s ease-in-out infinite;
+}
+
+.line-navigation-highlight {
+  background-color: rgba(31, 136, 61, 0.3) !important;
+  border-left: 5px solid var(--accent-green) !important;
+  animation: lineNavigationGlow 2s ease-in-out;
+}
+
+.line-navigation-pulse {
+  animation: lineNavigationPulse 1s ease-in-out infinite;
+}
+
+@keyframes fileNavigationPulse {
+  0%, 100% { 
+    border-color: var(--accent-green);
+    box-shadow: 0 0 20px rgba(31, 136, 61, 0.5);
+  }
+  50% { 
+    border-color: #28a745;
+    box-shadow: 0 0 30px rgba(40, 167, 69, 0.8);
+  }
+}
+
+@keyframes lineNavigationGlow {
+  0% { 
+    background-color: transparent;
+    border-left: none;
+  }
+  50% { 
+    background-color: rgba(31, 136, 61, 0.4);
+    border-left: 5px solid var(--accent-green);
+  }
+  100% { 
+    background-color: rgba(31, 136, 61, 0.3);
+    border-left: 5px solid var(--accent-green);
+  }
+}
+
+@keyframes lineNavigationPulse {
+  0%, 100% { 
+    background-color: rgba(31, 136, 61, 0.3);
+  }
+  50% { 
+    background-color: rgba(31, 136, 61, 0.5);
+  }
+}
+
+/* Legacy animations (kept for backward compatibility) */
 .file-highlighted {
   animation: fileFlash 2s ease-in-out;
 }
