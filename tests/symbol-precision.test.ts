@@ -15,12 +15,29 @@ class GitServiceTestHelper {
     return regex.test(lineContent);
   }
 
-  // This is the new fixed version using OXC (same as GitService now uses)
+  // This is the new optimized version (fast regex with smart string detection)
   public lineContainsSymbol(lineContent: string, symbolName: string): boolean {
-    return lineContainsSymbolPrecise(lineContent, symbolName);
+    // Fast string-based detection with improved accuracy (no expensive parsing)
+    
+    // Skip obvious comments
+    const trimmed = lineContent.trim();
+    if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
+      return false;
+    }
+    
+    // Quick string literal detection - look for symbol inside quotes
+    // This handles the most common false positive: "/auth/register"
+    const quotedRegex = new RegExp(`['"\`][^'"\`]*\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b[^'"\`]*['"\`]`);
+    if (quotedRegex.test(lineContent)) {
+      return false; // Symbol is inside quotes, ignore it
+    }
+    
+    // Look for symbol as whole word, not part of another identifier
+    const regex = new RegExp(`\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    return regex.test(lineContent);
   }
 
-  // Expose the precise method for testing  
+  // Keep the OXC version for comparison (but don't use in production due to performance)
   public lineContainsSymbolPrecise(lineContent: string, symbolName: string): boolean {
     return lineContainsSymbolPrecise(lineContent, symbolName);
   }

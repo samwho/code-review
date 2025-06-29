@@ -7,7 +7,11 @@ import type { SimpleGit } from 'simple-git';
 import { DiffParser } from './parsers/diff-parser';
 import { DependencyAnalyzer } from './dependency-analyzer';
 import { OxcSymbolExtractor, type OxcFileSymbols } from './oxc-symbol-extractor';
-import { lineContainsSymbolPrecise } from './utils/oxc-line-analyzer';
+import { 
+  extractSymbolReferencesFromContent, 
+  lineContainsAnySymbol,
+  type FileSymbolReferences 
+} from './utils/oxc-symbol-reference-extractor';
 import { APP_CONFIG } from './config';
 import { isSupportedSourceFile } from './utils/file-utils';
 import type { 
@@ -49,6 +53,9 @@ export class GitService {
   private readonly diffParser: DiffParser;
   private readonly repoPath: string;
   private readonly git: SimpleGit;
+  
+  // Cache for precomputed symbol references per file
+  private readonly symbolReferencesCache = new Map<string, FileSymbolReferences>();
   
   constructor(repoPath?: string) {
     this.repoPath = repoPath || APP_CONFIG.DEFAULT_REPO_PATH;
@@ -119,6 +126,9 @@ export class GitService {
     
     // Extract symbols only from the changed files
     const symbols = await this.symbolExtractor.extractFromChangedFiles(sortedFiles, compareBranch);
+    
+    // Precompute symbol references using OXC for fast lookups
+    await this.precomputeSymbolReferences(symbols, sortedFiles);
     
     // Pre-process symbol references to eliminate frontend processing
     const symbolReferences = await this.preprocessSymbolReferences(symbols, sortedFiles);
@@ -249,6 +259,60 @@ export class GitService {
   }
 
   /**
+   * Load current content of a file from git
+   */
+  private async loadFileContent(filename: string): Promise<string | null> {
+    try {
+      const content = await this.git.show(['HEAD:' + filename]);
+      return content;
+    } catch (error) {
+      console.warn(`Failed to load content for ${filename}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * Precompute symbol references for all files using OXC
+   */
+  private async precomputeSymbolReferences(symbols: OxcFileSymbols[], diffFiles: FileDiff[]): Promise<void> {
+    // Create set of all symbol names for efficient lookup
+    const allSymbolNames = new Set<string>();
+    symbols.forEach(fileSymbols => {
+      fileSymbols.symbols.forEach(symbol => {
+        allSymbolNames.add(symbol.name);
+      });
+    });
+
+    // Process each diff file to extract symbol references
+    const promises = diffFiles.map(async (file) => {
+      if (!this.isHighlightableLanguage(this.detectLanguageFromFilename(file.filename))) {
+        return;
+      }
+
+      try {
+        // Load current file content from git
+        const content = await this.loadFileContent(file.filename);
+        if (!content) return;
+
+        // Extract all symbol references using OXC
+        const references = extractSymbolReferencesFromContent(content, file.filename, allSymbolNames);
+        
+        // Cache the results
+        this.symbolReferencesCache.set(file.filename, {
+          filename: file.filename,
+          references
+        });
+
+        console.log(`🔍 Precomputed ${references.length} symbol references in ${file.filename}`);
+      } catch (error) {
+        console.warn(`Failed to precompute symbol references for ${file.filename}:`, error);
+      }
+    });
+
+    await Promise.all(promises);
+  }
+
+  /**
    * Pre-process symbol references to eliminate expensive frontend processing
    */
   private async preprocessSymbolReferences(
@@ -310,11 +374,12 @@ export class GitService {
       for (const line of file.lines) {
         if (line.isHunkHeader) continue;
         
-        // Simple symbol detection (can be enhanced with better parsing)
-        if (this.lineContainsSymbol(line.content, symbolName)) {
-          const lineNumber = line.type === 'added' ? line.lineNumber : 
-                           line.type === 'removed' ? line.oldLineNumber : 
-                           line.lineNumber || line.oldLineNumber;
+        // Use OXC-based precise symbol detection
+        const lineNumber = line.type === 'added' ? line.lineNumber : 
+                         line.type === 'removed' ? line.oldLineNumber : 
+                         line.lineNumber || line.oldLineNumber;
+        
+        if (this.lineContainsSymbol(line.content, symbolName, file.filename, lineNumber)) {
           
           references.push({
             file: file.filename,
@@ -333,9 +398,15 @@ export class GitService {
   /**
    * Detect if a line contains a symbol (simple implementation)
    */
-  private lineContainsSymbol(lineContent: string, symbolName: string): boolean {
-    // Use OXC-based precise symbol detection to avoid false positives in strings/comments
-    return lineContainsSymbolPrecise(lineContent, symbolName);
+  private lineContainsSymbol(lineContent: string, symbolName: string, filename?: string, lineNumber?: number): boolean {
+    // Use precomputed OXC-based symbol references for precise detection
+    if (filename && lineNumber && this.symbolReferencesCache.has(filename)) {
+      return lineContainsAnySymbol(lineNumber, filename, [symbolName], this.symbolReferencesCache);
+    }
+    
+    // Fallback: if no precomputed data, assume it doesn't contain the symbol
+    // This is safe - better to miss a reference than show false positives
+    return false;
   }
 
   /**
