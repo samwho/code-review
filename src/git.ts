@@ -266,11 +266,11 @@ export class GitService {
   ): Promise<void> {
     // Create set of all symbol names for efficient lookup
     const allSymbolNames = new Set<string>();
-    symbols.forEach((fileSymbols) => {
-      fileSymbols.symbols.forEach((symbol) => {
+    for (const fileSymbols of symbols) {
+      for (const symbol of fileSymbols.symbols) {
         allSymbolNames.add(symbol.name);
-      });
-    });
+      }
+    }
 
     // Process each diff file to extract symbol references
     const promises = diffFiles.map(async (file) => {
@@ -371,43 +371,87 @@ export class GitService {
     const references: SymbolReference[] = [];
 
     for (const file of diffFiles) {
-      // Skip the file where the symbol is defined
-      if (file.filename === definitionFile) {
-        continue;
-      }
+      const fileReferences = this.findSymbolReferencesInFile(symbolName, definitionFile, file);
+      references.push(...fileReferences);
+    }
 
-      const language = this.detectLanguageFromFilename(file.filename);
-      if (!this.isHighlightableLanguage(language)) {
-        continue;
-      }
+    return references;
+  }
 
-      // Search through diff lines for symbol usage
-      for (const line of file.lines) {
-        if (line.isHunkHeader) {
-          continue;
-        }
+  /**
+   * Find symbol references in a single diff file
+   */
+  private findSymbolReferencesInFile(
+    symbolName: string,
+    definitionFile: string,
+    file: FileDiff
+  ): SymbolReference[] {
+    if (this.shouldSkipFile(file, definitionFile)) {
+      return [];
+    }
 
-        // Use OXC-based precise symbol detection
-        const lineNumber =
-          line.type === 'added'
-            ? line.lineNumber
-            : line.type === 'removed'
-              ? line.oldLineNumber
-              : line.lineNumber || line.oldLineNumber;
+    const references: SymbolReference[] = [];
 
-        if (this.lineContainsSymbol(line.content, symbolName, file.filename, lineNumber)) {
-          references.push({
-            file: file.filename,
-            line: lineNumber || 0,
-            type: line.type as DiffLineType,
-            context: this.determineUsageContext(line.content, symbolName),
-            content: line.content.trim(),
-          });
-        }
+    for (const line of file.lines) {
+      const lineReference = this.findSymbolReferenceInLine(symbolName, file, line);
+
+      if (lineReference) {
+        references.push(lineReference);
       }
     }
 
     return references;
+  }
+
+  /**
+   * Check if file should be skipped for symbol reference search
+   */
+  private shouldSkipFile(file: FileDiff, definitionFile: string): boolean {
+    // Skip the file where the symbol is defined
+    if (file.filename === definitionFile) {
+      return true;
+    }
+
+    const language = this.detectLanguageFromFilename(file.filename);
+    return !this.isHighlightableLanguage(language);
+  }
+
+  /**
+   * Find symbol reference in a single diff line
+   */
+  private findSymbolReferenceInLine(
+    symbolName: string,
+    file: FileDiff,
+    line: any
+  ): SymbolReference | null {
+    if (line.isHunkHeader) {
+      return null;
+    }
+
+    const lineNumber = this.getLineNumberFromDiffLine(line);
+
+    if (this.lineContainsSymbol(line.content, symbolName, file.filename, lineNumber)) {
+      return {
+        file: file.filename,
+        line: lineNumber || 0,
+        type: line.type as DiffLineType,
+        context: this.determineUsageContext(line.content, symbolName),
+        content: line.content.trim(),
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Get line number from diff line based on type
+   */
+  private getLineNumberFromDiffLine(line: any): number | undefined {
+    return line.type === 'added'
+      ? line.lineNumber
+      : line.type === 'removed'
+        ? line.oldLineNumber
+        : line.lineNumber || line.oldLineNumber;
   }
 
   /**

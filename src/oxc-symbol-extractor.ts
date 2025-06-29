@@ -97,7 +97,9 @@ export class OxcSymbolExtractor {
             // Store content for later processing
             this.fileHashCache.set(file.filename, content);
           }
-        } catch (_error) {}
+        } catch (_error) {
+          // Ignore errors when reading file content from git
+        }
       }
     }
 
@@ -208,111 +210,185 @@ export class OxcSymbolExtractor {
         sourceType: 'module',
       });
 
-      result.program.body.forEach((node) => {
-        switch (node.type) {
-          case 'ImportDeclaration':
-            if (node.source?.value) {
-              const modulePath = node.source.value;
-              const importedSymbols: string[] = [];
-
-              // Extract imported symbols
-              if (node.specifiers) {
-                node.specifiers.forEach((spec) => {
-                  if (
-                    spec.type === 'ImportSpecifier' &&
-                    spec.imported &&
-                    'name' in spec.imported &&
-                    typeof spec.imported.name === 'string'
-                  ) {
-                    importedSymbols.push(spec.imported.name);
-                  } else if (
-                    spec.type === 'ImportDefaultSpecifier' &&
-                    spec.local &&
-                    spec.local.name
-                  ) {
-                    importedSymbols.push('default');
-                  } else if (
-                    spec.type === 'ImportNamespaceSpecifier' &&
-                    spec.local &&
-                    spec.local.name
-                  ) {
-                    importedSymbols.push('*');
-                  }
-                });
-              }
-
-              imports.push({
-                module: modulePath,
-                isRelative: modulePath.startsWith('./') || modulePath.startsWith('../'),
-                importedSymbols,
-                line: this.getLineNumber(content, node.start),
-              });
-            }
-            break;
-
-          case 'ExportNamedDeclaration': {
-            const exportedSymbols: string[] = [];
-            let isReExport = false;
-            let module: string | null = null;
-
-            if (node.source?.value) {
-              // Re-export from another module
-              isReExport = true;
-              module = node.source.value;
-            }
-
-            if (node.specifiers) {
-              node.specifiers.forEach((spec) => {
-                if (
-                  spec.exported &&
-                  'name' in spec.exported &&
-                  typeof spec.exported.name === 'string'
-                ) {
-                  exportedSymbols.push(spec.exported.name);
-                }
-              });
-            }
-
-            if (node.declaration) {
-              // Extract names from declaration
-              this.extractExportNamesFromDeclaration(node.declaration, exportedSymbols);
-            }
-
-            if (exportedSymbols.length > 0) {
-              exports.push({
-                module,
-                exportedSymbols,
-                isReExport,
-                line: this.getLineNumber(content, node.start),
-              });
-            }
-            break;
-          }
-
-          case 'ExportDefaultDeclaration':
-            exports.push({
-              module: null,
-              exportedSymbols: ['default'],
-              isReExport: false,
-              line: this.getLineNumber(content, node.start),
-            });
-            break;
-
-          case 'ExportAllDeclaration':
-            if (node.source?.value) {
-              exports.push({
-                module: node.source.value,
-                exportedSymbols: ['*'],
-                isReExport: true,
-                line: this.getLineNumber(content, node.start),
-              });
-            }
-            break;
-        }
-      });
-    } catch (_error) {}
+      for (const node of result.program.body) {
+        this.processTopLevelNode(node, content, imports, exports);
+      }
+    } catch (_error) {
+      // Ignore parsing errors when extracting dependencies
+    }
 
     return { imports, exports };
+  }
+
+  /**
+   * Process a single top-level AST node for dependency extraction
+   */
+  private processTopLevelNode(
+    node: any,
+    content: string,
+    imports: OxcImport[],
+    exports: OxcExport[]
+  ): void {
+    switch (node.type) {
+      case 'ImportDeclaration':
+        this.processImportDeclaration(node, content, imports);
+        break;
+      case 'ExportNamedDeclaration':
+        this.processExportNamedDeclaration(node, content, exports);
+        break;
+      case 'ExportDefaultDeclaration':
+        this.processExportDefaultDeclaration(node, content, exports);
+        break;
+      case 'ExportAllDeclaration':
+        this.processExportAllDeclaration(node, content, exports);
+        break;
+    }
+  }
+
+  /**
+   * Process ImportDeclaration node
+   */
+  private processImportDeclaration(node: any, content: string, imports: OxcImport[]): void {
+    if (!node.source?.value) {
+      return;
+    }
+
+    const modulePath = node.source.value;
+    const importedSymbols = this.extractImportedSymbols(node.specifiers);
+
+    imports.push({
+      module: modulePath,
+      isRelative: this.isRelativeImport(modulePath),
+      importedSymbols,
+      line: this.getLineNumber(content, node.start),
+    });
+  }
+
+  /**
+   * Extract imported symbols from import specifiers
+   */
+  private extractImportedSymbols(specifiers: any[]): string[] {
+    if (!specifiers) {
+      return [];
+    }
+
+    const importedSymbols: string[] = [];
+
+    for (const spec of specifiers) {
+      const symbolName = this.getImportSymbolName(spec);
+      if (symbolName) {
+        importedSymbols.push(symbolName);
+      }
+    }
+
+    return importedSymbols;
+  }
+
+  /**
+   * Get symbol name from import specifier
+   */
+  private getImportSymbolName(spec: any): string | null {
+    if (
+      spec.type === 'ImportSpecifier' &&
+      spec.imported &&
+      'name' in spec.imported &&
+      typeof spec.imported.name === 'string'
+    ) {
+      return spec.imported.name;
+    }
+
+    if (spec.type === 'ImportDefaultSpecifier' && spec.local && spec.local.name) {
+      return 'default';
+    }
+
+    if (spec.type === 'ImportNamespaceSpecifier' && spec.local && spec.local.name) {
+      return '*';
+    }
+
+    return null;
+  }
+
+  /**
+   * Check if import is relative
+   */
+  private isRelativeImport(modulePath: string): boolean {
+    return modulePath.startsWith('./') || modulePath.startsWith('../');
+  }
+
+  /**
+   * Process ExportNamedDeclaration node
+   */
+  private processExportNamedDeclaration(node: any, content: string, exports: OxcExport[]): void {
+    const exportedSymbols: string[] = [];
+    let isReExport = false;
+    let module: string | null = null;
+
+    if (node.source?.value) {
+      isReExport = true;
+      module = node.source.value;
+    }
+
+    this.extractExportSpecifierSymbols(node.specifiers, exportedSymbols);
+    this.extractDeclarationExportSymbols(node.declaration, exportedSymbols);
+
+    if (exportedSymbols.length > 0) {
+      exports.push({
+        module,
+        exportedSymbols,
+        isReExport,
+        line: this.getLineNumber(content, node.start),
+      });
+    }
+  }
+
+  /**
+   * Extract symbols from export specifiers
+   */
+  private extractExportSpecifierSymbols(specifiers: any[], exportedSymbols: string[]): void {
+    if (!specifiers) {
+      return;
+    }
+
+    for (const spec of specifiers) {
+      if (spec.exported && 'name' in spec.exported && typeof spec.exported.name === 'string') {
+        exportedSymbols.push(spec.exported.name);
+      }
+    }
+  }
+
+  /**
+   * Extract symbols from export declaration
+   */
+  private extractDeclarationExportSymbols(declaration: any, exportedSymbols: string[]): void {
+    if (declaration) {
+      this.extractExportNamesFromDeclaration(declaration, exportedSymbols);
+    }
+  }
+
+  /**
+   * Process ExportDefaultDeclaration node
+   */
+  private processExportDefaultDeclaration(node: any, content: string, exports: OxcExport[]): void {
+    exports.push({
+      module: null,
+      exportedSymbols: ['default'],
+      isReExport: false,
+      line: this.getLineNumber(content, node.start),
+    });
+  }
+
+  /**
+   * Process ExportAllDeclaration node
+   */
+  private processExportAllDeclaration(node: any, content: string, exports: OxcExport[]): void {
+    if (node.source?.value) {
+      exports.push({
+        module: node.source.value,
+        exportedSymbols: ['*'],
+        isReExport: true,
+        line: this.getLineNumber(content, node.start),
+      });
+    }
   }
 
   /**
@@ -329,12 +405,14 @@ export class OxcSymbolExtractor {
         }
         break;
       case 'VariableDeclaration':
-        nodeWithType.declarations?.forEach((decl: unknown) => {
-          const declaration = decl as { id?: { name?: string } };
-          if (declaration.id?.name) {
-            exportedSymbols.push(declaration.id.name);
+        if (nodeWithType.declarations) {
+          for (const decl of nodeWithType.declarations) {
+            const declaration = decl as { id?: { name?: string } };
+            if (declaration.id?.name) {
+              exportedSymbols.push(declaration.id.name);
+            }
           }
-        });
+        }
         break;
     }
   }
@@ -350,137 +428,270 @@ export class OxcSymbolExtractor {
         sourceType: 'module',
       });
 
-      result.program.body.forEach((node) => {
-        switch (node.type) {
-          case 'ExportNamedDeclaration':
-            if (node.declaration) {
-              this.extractFromDeclaration(node.declaration, symbols, true, content);
-            }
-            // Handle re-exports (export { name } from 'module')
-            if (node.specifiers) {
-              node.specifiers.forEach((spec) => {
-                if (
-                  spec.exported &&
-                  'name' in spec.exported &&
-                  typeof spec.exported.name === 'string'
-                ) {
-                  symbols.push({
-                    name: spec.exported.name,
-                    type: 'export',
-                    line: this.getLineNumber(content, spec.exported.start),
-                    isExported: true,
-                  });
-                }
-              });
-            }
-            break;
-
-          case 'ClassDeclaration':
-          case 'FunctionDeclaration':
-          case 'TSInterfaceDeclaration':
-            this.extractFromDeclaration(node, symbols, false, content);
-            break;
-        }
-      });
-    } catch (_error) {}
+      for (const node of result.program.body) {
+        this.processNodeForSymbolExtraction(node, symbols, content);
+      }
+    } catch (_error) {
+      // Ignore parsing errors when extracting symbols
+    }
 
     return symbols;
+  }
+
+  /**
+   * Process a single AST node for symbol extraction
+   */
+  private processNodeForSymbolExtraction(node: any, symbols: OxcSymbol[], content: string): void {
+    switch (node.type) {
+      case 'ExportNamedDeclaration':
+        this.processExportNamedDeclarationForSymbols(node, symbols, content);
+        break;
+      case 'ClassDeclaration':
+      case 'FunctionDeclaration':
+      case 'TSInterfaceDeclaration':
+        this.extractFromDeclaration(node, symbols, false, content);
+        break;
+    }
+  }
+
+  /**
+   * Process ExportNamedDeclaration for symbol extraction
+   */
+  private processExportNamedDeclarationForSymbols(
+    node: any,
+    symbols: OxcSymbol[],
+    content: string
+  ): void {
+    if (node.declaration) {
+      this.extractFromDeclaration(node.declaration, symbols, true, content);
+    }
+
+    this.processExportSpecifiersForSymbols(node.specifiers, symbols, content);
+  }
+
+  /**
+   * Process export specifiers for symbol extraction
+   */
+  private processExportSpecifiersForSymbols(
+    specifiers: any[],
+    symbols: OxcSymbol[],
+    content: string
+  ): void {
+    if (!specifiers) {
+      return;
+    }
+
+    for (const spec of specifiers) {
+      if (this.isValidExportSpecifier(spec)) {
+        symbols.push({
+          name: spec.exported.name,
+          type: 'export',
+          line: this.getLineNumber(content, spec.exported.start),
+          isExported: true,
+        });
+      }
+    }
+  }
+
+  /**
+   * Check if export specifier is valid
+   */
+  private isValidExportSpecifier(spec: any): boolean {
+    return spec.exported && 'name' in spec.exported && typeof spec.exported.name === 'string';
   }
 
   /**
    * Extract symbols from a declaration node
    */
   private extractFromDeclaration(
-    node: any,
+    node: {
+      type: string;
+      id?: { name?: string };
+      start?: number;
+      body?: {
+        body?: Array<{
+          type: string;
+          key?: { name?: string };
+          start?: number;
+        }>;
+      };
+      declarations?: Array<{
+        id?: { name?: string };
+        init?: { type: string };
+        start?: number;
+      }>;
+    },
     symbols: OxcSymbol[],
     isExported: boolean,
     content: string
   ): void {
     switch (node.type) {
       case 'ClassDeclaration':
-        if (node.id?.name) {
-          const className = node.id.name;
-          symbols.push({
-            name: className,
-            type: 'class',
-            line: this.getLineNumber(content, node.start),
-            isExported,
-          });
-
-          // Extract class methods (skip constructors)
-          if (node.body?.body) {
-            node.body.body.forEach((member: any) => {
-              if (
-                member.type === 'MethodDefinition' &&
-                member.key &&
-                member.key.name &&
-                member.key.name !== 'constructor'
-              ) {
-                symbols.push({
-                  name: member.key.name,
-                  type: 'function',
-                  line: this.getLineNumber(content, member.start),
-                  isExported, // Methods inherit class export status
-                  className: className,
-                });
-              }
-            });
-          }
-        }
+        this.extractFromClassDeclaration(node, symbols, isExported, content);
         break;
-
       case 'FunctionDeclaration':
-        if (node.id?.name) {
-          symbols.push({
-            name: node.id.name,
-            type: 'function',
-            line: this.getLineNumber(content, node.start),
-            isExported,
-          });
-        }
+        this.extractFromFunctionDeclaration(node, symbols, isExported, content);
         break;
-
       case 'TSInterfaceDeclaration':
-        if (node.id?.name) {
-          symbols.push({
-            name: node.id.name,
-            type: 'export',
-            line: this.getLineNumber(content, node.start),
-            isExported: true,
-          });
-        }
+        this.extractFromInterfaceDeclaration(node, symbols, content);
         break;
-
       case 'VariableDeclaration':
-        node.declarations.forEach((decl: any) => {
-          if (decl.id?.name) {
-            const name = decl.id.name;
-
-            // Check if it's a function expression or arrow function
-            if (
-              decl.init &&
-              (decl.init.type === 'ArrowFunctionExpression' ||
-                decl.init.type === 'FunctionExpression')
-            ) {
-              symbols.push({
-                name,
-                type: 'function',
-                line: this.getLineNumber(content, decl.start),
-                isExported,
-              });
-            } else if (isExported) {
-              // Export any other variable declarations
-              symbols.push({
-                name,
-                type: 'export',
-                line: this.getLineNumber(content, decl.start),
-                isExported: true,
-              });
-            }
-          }
-        });
+        this.extractFromVariableDeclaration(node, symbols, isExported, content);
         break;
     }
+  }
+
+  /**
+   * Extract symbols from class declaration
+   */
+  private extractFromClassDeclaration(
+    node: any,
+    symbols: OxcSymbol[],
+    isExported: boolean,
+    content: string
+  ): void {
+    if (!node.id?.name) {
+      return;
+    }
+
+    const className = node.id.name;
+    symbols.push({
+      name: className,
+      type: 'class',
+      line: this.getLineNumber(content, node.start),
+      isExported,
+    });
+
+    this.extractClassMethods(node.body, className, symbols, isExported, content);
+  }
+
+  /**
+   * Extract class methods from class body
+   */
+  private extractClassMethods(
+    body: any,
+    className: string,
+    symbols: OxcSymbol[],
+    isExported: boolean,
+    content: string
+  ): void {
+    if (!body?.body) {
+      return;
+    }
+
+    for (const member of body.body) {
+      if (this.isValidMethod(member)) {
+        symbols.push({
+          name: member.key.name,
+          type: 'function',
+          line: this.getLineNumber(content, member.start),
+          isExported, // Methods inherit class export status
+          className: className,
+        });
+      }
+    }
+  }
+
+  /**
+   * Check if member is a valid method (not constructor)
+   */
+  private isValidMethod(member: any): boolean {
+    return (
+      member.type === 'MethodDefinition' &&
+      member.key &&
+      member.key.name &&
+      member.key.name !== 'constructor'
+    );
+  }
+
+  /**
+   * Extract symbols from function declaration
+   */
+  private extractFromFunctionDeclaration(
+    node: any,
+    symbols: OxcSymbol[],
+    isExported: boolean,
+    content: string
+  ): void {
+    if (node.id?.name) {
+      symbols.push({
+        name: node.id.name,
+        type: 'function',
+        line: this.getLineNumber(content, node.start),
+        isExported,
+      });
+    }
+  }
+
+  /**
+   * Extract symbols from interface declaration
+   */
+  private extractFromInterfaceDeclaration(node: any, symbols: OxcSymbol[], content: string): void {
+    if (node.id?.name) {
+      symbols.push({
+        name: node.id.name,
+        type: 'export',
+        line: this.getLineNumber(content, node.start),
+        isExported: true,
+      });
+    }
+  }
+
+  /**
+   * Extract symbols from variable declaration
+   */
+  private extractFromVariableDeclaration(
+    node: any,
+    symbols: OxcSymbol[],
+    isExported: boolean,
+    content: string
+  ): void {
+    if (!node.declarations) {
+      return;
+    }
+
+    for (const decl of node.declarations) {
+      this.extractFromVariableDeclarator(decl, symbols, isExported, content);
+    }
+  }
+
+  /**
+   * Extract symbols from variable declarator
+   */
+  private extractFromVariableDeclarator(
+    decl: any,
+    symbols: OxcSymbol[],
+    isExported: boolean,
+    content: string
+  ): void {
+    if (!decl.id?.name) {
+      return;
+    }
+
+    const name = decl.id.name;
+
+    if (this.isFunctionExpression(decl.init)) {
+      symbols.push({
+        name,
+        type: 'function',
+        line: this.getLineNumber(content, decl.start),
+        isExported,
+      });
+    } else if (isExported) {
+      symbols.push({
+        name,
+        type: 'export',
+        line: this.getLineNumber(content, decl.start),
+        isExported: true,
+      });
+    }
+  }
+
+  /**
+   * Check if init is a function expression
+   */
+  private isFunctionExpression(init: any): boolean {
+    return init && (init.type === 'ArrowFunctionExpression' || init.type === 'FunctionExpression');
   }
 
   /**

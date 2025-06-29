@@ -26,27 +26,7 @@ export function findSymbolReferencesInLine(
   }
 
   try {
-    // Parse the line as TypeScript/JavaScript
-    // We wrap it in a minimal function to ensure it's valid syntax for parsing
-    // Handle incomplete statements by adding closing braces/semicolons as needed
-    let processedContent = lineContent.trim();
-
-    // Add semicolon if missing (for incomplete statements)
-    if (
-      !(
-        processedContent.endsWith(';') ||
-        processedContent.endsWith('{') ||
-        processedContent.endsWith('}')
-      )
-    ) {
-      processedContent += ';';
-    }
-
-    // Close incomplete blocks
-    if (processedContent.includes('{') && !processedContent.includes('}')) {
-      processedContent += ' }';
-    }
-
+    const processedContent = prepareContentForParsing(lineContent);
     const wrappedCode = `function temp() {\n${processedContent}\n}`;
 
     const result = parseSync('temp.ts', wrappedCode, {
@@ -57,42 +37,101 @@ export function findSymbolReferencesInLine(
       return [];
     }
 
-    const occurrences: SymbolOccurrence[] = [];
-
-    // Walk the AST to find identifier references
-    walkAST(result.program, (node: unknown) => {
-      const nodeWithType = node as {
-        type: string;
-        name?: string;
-        span?: { start: { line: number; column: number } };
-      };
-      // Only look for identifiers that match our symbol name
-      if (nodeWithType.type === 'Identifier' && nodeWithType.name === symbolName) {
-        // Determine context based on parent node
-        const context = determineIdentifierContext(
-          nodeWithType,
-          getParentNode(result.program, nodeWithType)
-        );
-
-        // Adjust line number (subtract 1 because we added wrapper function)
-        const actualLine = nodeWithType.span
-          ? Math.max(lineNumber, lineNumber + nodeWithType.span.start.line - 1)
-          : lineNumber;
-
-        occurrences.push({
-          name: symbolName,
-          line: actualLine,
-          column: nodeWithType.span?.start.column || 0,
-          context,
-        });
-      }
-    });
-
-    return occurrences;
+    return extractSymbolOccurrences(result.program, symbolName, lineNumber);
   } catch (_error) {
     // If parsing fails, fall back to simple detection but still avoid strings
     return fallbackSymbolDetection(lineContent, symbolName, lineNumber);
   }
+}
+
+/**
+ * Prepare content for OXC parsing
+ */
+function prepareContentForParsing(lineContent: string): string {
+  let processedContent = lineContent.trim();
+
+  processedContent = addMissingSemicolon(processedContent);
+  processedContent = closeIncompleteBlocks(processedContent);
+
+  return processedContent;
+}
+
+/**
+ * Add semicolon if missing for incomplete statements
+ */
+function addMissingSemicolon(content: string): string {
+  const hasProperEnding = content.endsWith(';') || content.endsWith('{') || content.endsWith('}');
+
+  return hasProperEnding ? content : content + ';';
+}
+
+/**
+ * Close incomplete blocks
+ */
+function closeIncompleteBlocks(content: string): string {
+  const hasOpenBrace = content.includes('{');
+  const hasCloseBrace = content.includes('}');
+
+  return hasOpenBrace && !hasCloseBrace ? content + ' }' : content;
+}
+
+/**
+ * Extract symbol occurrences from parsed AST
+ */
+function extractSymbolOccurrences(
+  program: unknown,
+  symbolName: string,
+  lineNumber: number
+): SymbolOccurrence[] {
+  const occurrences: SymbolOccurrence[] = [];
+
+  walkAST(program, (node: unknown) => {
+    const nodeWithType = node as {
+      type: string;
+      name?: string;
+      span?: { start: { line: number; column: number } };
+    };
+
+    if (isMatchingIdentifier(nodeWithType, symbolName)) {
+      const occurrence = createSymbolOccurrence(nodeWithType, symbolName, lineNumber, program);
+      occurrences.push(occurrence);
+    }
+  });
+
+  return occurrences;
+}
+
+/**
+ * Check if node is a matching identifier
+ */
+function isMatchingIdentifier(node: { type: string; name?: string }, symbolName: string): boolean {
+  return node.type === 'Identifier' && node.name === symbolName;
+}
+
+/**
+ * Create symbol occurrence from AST node
+ */
+function createSymbolOccurrence(
+  node: {
+    name?: string;
+    span?: { start: { line: number; column: number } };
+  },
+  symbolName: string,
+  lineNumber: number,
+  program: unknown
+): SymbolOccurrence {
+  const context = determineIdentifierContext(node, getParentNode(program, node));
+
+  const actualLine = node.span
+    ? Math.max(lineNumber, lineNumber + node.span.start.line - 1)
+    : lineNumber;
+
+  return {
+    name: symbolName,
+    line: actualLine,
+    column: node.span?.start.column || 0,
+    context,
+  };
 }
 
 /**
@@ -210,49 +249,136 @@ function fallbackSymbolDetection(
   symbolName: string,
   lineNumber: number
 ): SymbolOccurrence[] {
-  // Skip obvious comments
-  const trimmed = lineContent.trim();
-  if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
+  if (isCommentLine(lineContent)) {
     return [];
   }
 
-  // Basic string detection (not perfect but better than regex)
-  let inString = false;
-  let stringChar = '';
-  let inTemplate = false;
+  const cleanContent = removeStringLiterals(lineContent);
+  return findSymbolInCleanContent(cleanContent, symbolName, lineNumber);
+}
+
+/**
+ * Check if line is a comment
+ */
+function isCommentLine(lineContent: string): boolean {
+  const trimmed = lineContent.trim();
+  return trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*');
+}
+
+/**
+ * Remove string literals and template literals from content
+ */
+function removeStringLiterals(lineContent: string): string {
+  const stringState = {
+    inString: false,
+    stringChar: '',
+    inTemplate: false,
+  };
+
   let cleanContent = '';
 
   for (let i = 0; i < lineContent.length; i++) {
     const char = lineContent[i];
-    const prevChar = i > 0 ? lineContent[i - 1] : '';
+    const prevChar = i > 0 ? lineContent[i - 1] || '' : '';
 
-    if (!(inString || inTemplate)) {
-      if (char === '"' || char === "'") {
-        inString = true;
-        stringChar = char;
-        cleanContent += ' '; // Replace string content with space
-      } else if (char === '`') {
-        inTemplate = true;
-        cleanContent += ' '; // Replace template content with space
-      } else {
-        cleanContent += char;
-      }
-    } else if (inString) {
-      if (char === stringChar && prevChar !== '\\') {
-        inString = false;
-        stringChar = '';
-      }
-      cleanContent += ' '; // Replace string content with space
-    } else if (inTemplate) {
-      if (char === '`' && prevChar !== '\\') {
-        inTemplate = false;
-      }
-      cleanContent += ' '; // Replace template content with space
+    if (char) {
+      cleanContent += processCharacter(char, prevChar, stringState);
     }
   }
 
-  // Now check for symbol in clean content
-  const regex = new RegExp(`\\b${symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+  return cleanContent;
+}
+
+/**
+ * Process a single character considering string state
+ */
+function processCharacter(
+  char: string,
+  prevChar: string,
+  state: { inString: boolean; stringChar: string; inTemplate: boolean }
+): string {
+  if (isOutsideStrings(state)) {
+    return handleOutsideStringChar(char, state);
+  }
+
+  if (state.inString) {
+    return handleInsideStringChar(char, prevChar, state);
+  }
+
+  if (state.inTemplate) {
+    return handleInsideTemplateChar(char, prevChar, state);
+  }
+
+  return ' ';
+}
+
+/**
+ * Check if we're outside all string types
+ */
+function isOutsideStrings(state: { inString: boolean; inTemplate: boolean }): boolean {
+  return !(state.inString || state.inTemplate);
+}
+
+/**
+ * Handle character when outside strings
+ */
+function handleOutsideStringChar(
+  char: string,
+  state: { inString: boolean; stringChar: string; inTemplate: boolean }
+): string {
+  if (char === '"' || char === "'") {
+    state.inString = true;
+    state.stringChar = char;
+    return ' ';
+  }
+
+  if (char === '`') {
+    state.inTemplate = true;
+    return ' ';
+  }
+
+  return char;
+}
+
+/**
+ * Handle character when inside string
+ */
+function handleInsideStringChar(
+  char: string,
+  prevChar: string,
+  state: { inString: boolean; stringChar: string }
+): string {
+  if (char === state.stringChar && prevChar !== '\\') {
+    state.inString = false;
+    state.stringChar = '';
+  }
+  return ' ';
+}
+
+/**
+ * Handle character when inside template literal
+ */
+function handleInsideTemplateChar(
+  char: string,
+  prevChar: string,
+  state: { inTemplate: boolean }
+): string {
+  if (char === '`' && prevChar !== '\\') {
+    state.inTemplate = false;
+  }
+  return ' ';
+}
+
+/**
+ * Find symbol in clean content (after string removal)
+ */
+function findSymbolInCleanContent(
+  cleanContent: string,
+  symbolName: string,
+  lineNumber: number
+): SymbolOccurrence[] {
+  const regex = new RegExp(`\\b${escapeRegExp(symbolName)}\\b`);
+
   if (regex.test(cleanContent)) {
     return [
       {
@@ -265,4 +391,11 @@ function fallbackSymbolDetection(
   }
 
   return [];
+}
+
+/**
+ * Escape special regex characters
+ */
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

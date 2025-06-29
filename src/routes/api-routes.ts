@@ -44,7 +44,6 @@ export class ApiRoutes {
           return createErrorResponse('API endpoint not found', 404);
       }
     } catch (error) {
-      console.error('API Error:', error);
       const message = error instanceof Error ? error.message : 'Unknown error';
       return createErrorResponse(message, 500);
     }

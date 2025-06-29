@@ -52,43 +52,52 @@ export function resolveModulePath(
   currentFile: string,
   availableFiles: Set<string>
 ): string | null {
-  // Handle relative imports
-  if (modulePath.startsWith('./') || modulePath.startsWith('../')) {
-    const currentDir = currentFile.split('/').slice(0, -1);
-    const pathParts = modulePath.split('/');
-
-    for (const part of pathParts) {
-      if (part === '.') {
-        continue;
-      }
-      if (part === '..') {
-        currentDir.pop();
-      } else {
-        currentDir.push(part);
-      }
-    }
-
-    const resolvedPath = currentDir.join('/');
-
-    // Try different extensions
-    for (const ext of APP_CONFIG.SUPPORTED_EXTENSIONS) {
-      const withExt = resolvedPath + ext;
-      if (availableFiles.has(withExt)) {
-        return withExt;
-      }
-    }
-
-    // Try index files
-    for (const ext of APP_CONFIG.SUPPORTED_EXTENSIONS) {
-      const indexPath = `${resolvedPath}/index${ext}`;
-      if (availableFiles.has(indexPath)) {
-        return indexPath;
-      }
-    }
-
-    return resolvedPath;
+  // Only handle relative imports
+  if (!(modulePath.startsWith('./') || modulePath.startsWith('../'))) {
+    return null; // External modules (npm packages)
   }
 
-  // For now, ignore external modules (npm packages)
-  return null;
+  const resolvedPath = resolveRelativePath(modulePath, currentFile);
+  return findFileWithExtension(resolvedPath, availableFiles);
+}
+
+/**
+ * Helper: Resolve relative path navigation
+ */
+function resolveRelativePath(modulePath: string, currentFile: string): string {
+  const currentDir = currentFile.split('/').slice(0, -1);
+  const pathParts = modulePath.split('/');
+
+  for (const part of pathParts) {
+    if (part === '..') {
+      currentDir.pop();
+    } else if (part !== '.') {
+      currentDir.push(part);
+    }
+  }
+
+  return currentDir.join('/');
+}
+
+/**
+ * Helper: Find file with supported extensions
+ */
+function findFileWithExtension(basePath: string, availableFiles: Set<string>): string | null {
+  // Try direct path with extensions
+  for (const ext of APP_CONFIG.SUPPORTED_EXTENSIONS) {
+    const withExt = basePath + ext;
+    if (availableFiles.has(withExt)) {
+      return withExt;
+    }
+  }
+
+  // Try index files
+  for (const ext of APP_CONFIG.SUPPORTED_EXTENSIONS) {
+    const indexPath = `${basePath}/index${ext}`;
+    if (availableFiles.has(indexPath)) {
+      return indexPath;
+    }
+  }
+
+  return basePath;
 }

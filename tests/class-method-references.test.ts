@@ -128,11 +128,14 @@ const user = userService.findUser('123');
       );
 
       // Group by symbol
-      const refsBySymbol = new Map<string, Array<{
-        name: string;
-        line: number;
-        context: string;
-      }>>();
+      const refsBySymbol = new Map<
+        string,
+        Array<{
+          name: string;
+          line: number;
+          context: string;
+        }>
+      >();
       for (const ref of references) {
         if (!refsBySymbol.has(ref.name)) {
           refsBySymbol.set(ref.name, []);

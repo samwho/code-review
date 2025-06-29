@@ -27,8 +27,7 @@ export class StaticRoutes {
           'Content-Type': contentType,
         },
       });
-    } catch (error) {
-      console.error('Static file error:', error);
+    } catch (_error) {
       return new Response('Internal server error', { status: 500 });
     }
   }
