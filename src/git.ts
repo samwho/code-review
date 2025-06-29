@@ -34,7 +34,7 @@ export class GitService {
     this.repoPath = repoPath || APP_CONFIG.DEFAULT_REPO_PATH;
     this.git = simpleGit(this.repoPath);
     this.symbolExtractor = new OxcSymbolExtractor(this.repoPath);
-    this.dependencyAnalyzer = new DependencyAnalyzer();
+    this.dependencyAnalyzer = new DependencyAnalyzer(this.repoPath);
     this.diffParser = new DiffParser();
   }
 

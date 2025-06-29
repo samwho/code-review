@@ -3,7 +3,6 @@
  */
 
 import { GitService } from '../git';
-import { ExternalUsageDetector } from '../external-usage-detector';
 import { 
   createJsonResponse, 
   createErrorResponse, 
@@ -13,11 +12,7 @@ import {
 import type { FileOrder } from '../config';
 
 export class ApiRoutes {
-  private externalUsageDetector: ExternalUsageDetector;
-
-  constructor() {
-    this.externalUsageDetector = new ExternalUsageDetector();
-  }
+  constructor() {}
 
   /**
    * Get GitService instance for the specified repository
@@ -49,9 +44,6 @@ export class ApiRoutes {
         
         case '/api/dependencies':
           return await this.handleDependenciesRequest(url);
-        
-        case '/api/external-usages':
-          return await this.handleExternalUsagesRequest(url);
         
         default:
           return createErrorResponse('API endpoint not found', 404);
@@ -137,40 +129,4 @@ export class ApiRoutes {
     return createJsonResponse(serializedGraph);
   }
 
-  /**
-   * Returns external usages of symbols modified in a pull request
-   */
-  private async handleExternalUsagesRequest(url: URL): Promise<Response> {
-    const validation = validateRequiredParams(url, ['base', 'compare']);
-    
-    if (!validation.isValid) {
-      return createErrorResponse(
-        `Missing required parameters: ${validation.missing.join(', ')}`, 
-        400
-      );
-    }
-
-    const repository = getQueryParam(url, 'repository');
-    const baseBranch = getQueryParam(url, 'base');
-    const compareBranch = getQueryParam(url, 'compare');
-    const order = getQueryParam(url, 'order', 'alphabetical') as FileOrder;
-
-    const gitService = this.getGitService(repository);
-    
-    // First get the diff to understand what symbols were modified
-    const diffResult = await gitService.getOrderedFiles(baseBranch, compareBranch, order);
-    
-    if (!diffResult.symbols || diffResult.symbols.length === 0) {
-      return createJsonResponse({
-        affectedFiles: [],
-        totalFiles: 0,
-        scanDuration: 0
-      });
-    }
-
-    // Find external usages of the modified symbols
-    const externalUsages = await this.externalUsageDetector.findExternalUsages(diffResult.symbols);
-    
-    return createJsonResponse(externalUsages);
-  }
 }
